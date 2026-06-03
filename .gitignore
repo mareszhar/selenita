@@ -1,0 +1,22 @@
+# --- Package Managers & Dependencies ---
+node_modules/
+.npm-cache/
+.npm/
+
+# --- Build Outputs & Logs ---
+dist/
+build/
+out/
+npm-debug.log*
+*.log
+logs/
+*.tgz
+
+# --- Environment Variables & Secrets ---
+.env*
+!.env.example
+
+# --- Operating System Files ---
+.DS_Store
+Thumbs.db
+*.ini

@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // tsup's DTS plugin (rollup.js) explicitly sets `baseUrl: compilerOptions.baseUrl || "."`
+    // which TypeScript 6 treats as deprecated. This flag silences the warning in the
+    // build pipeline without affecting our development config.
+    // Track: https://github.com/egoist/tsup/issues (remove once tsup ships a TS6-compatible DTS build)
+    "ignoreDeprecations": "6.0",
+    // Strip all @internal declarations from the published .d.ts files. Lifecycle
+    // methods (_init, _initError, _cleanupLastQuery) are marked @internal and must
+    // not appear in consumer IntelliSense — they are selenita's own implementation
+    // detail, not part of the public API contract.
+    "stripInternal": true
+  }
+}

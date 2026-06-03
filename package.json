@@ -1,0 +1,79 @@
+{
+  "name": "@mszr/selenita",
+  "type": "module",
+  "version": "0.1.0",
+  "packageManager": "bun@1.3.14",
+  "description": "IntelliSense testing for TypeScript — completions, hover, diagnostics, and more via a delightful tagged-template API.",
+  "author": "Mares",
+  "license": "AGPL-3.0-only",
+  "homepage": "https://github.com/mareszhar/selenita#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mareszhar/selenita"
+  },
+  "bugs": {
+    "url": "https://github.com/mareszhar/selenita/issues"
+  },
+  "keywords": [
+    "typescript",
+    "intellisense",
+    "completions",
+    "language-service",
+    "testing",
+    "dx"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./vitest": {
+      "types": "./dist/vitest.d.ts",
+      "import": "./dist/vitest.js"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "upi": "bunx npm-check-updates -i",
+    "dev": "tsup --watch",
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:types": "tsc --noEmit -p tests/consumer/tsconfig.json",
+    "test:tarball": "node scripts/smoke-test-tarball.mjs",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
+    "validate": "bun run lint && bun run typecheck && bun run test",
+    "val": "bun run validate",
+    "release:patch": "npm version patch && npm publish --access public",
+    "release:minor": "npm version minor && npm publish --access public",
+    "release:major": "npm version major && npm publish --access public",
+    "prepublishOnly": "bun run validate && bun run build && bun run test:types && bun run test:tarball"
+  },
+  "peerDependencies": {
+    "typescript": ">=6.0.0",
+    "vitest": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "^9.0.0",
+    "@types/node": "^25.9.1",
+    "eslint": "^10.4.1",
+    "eslint-plugin-format": "^2.0.1",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
