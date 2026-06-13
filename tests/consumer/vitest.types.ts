@@ -1,39 +1,44 @@
-// Validates that importing @mszr/selenita/vitest augments Vitest's Assertion<T>
-// with custom matchers. Run with: tsc --noEmit -p tests/consumer/tsconfig.json
+// Validates that importing @mszr/selenita/vitest augments Vitest's expect()
+// return type with custom matchers. Run with: tsc --noEmit -p tests/consumer/tsconfig.json
 // (requires a fresh build first)
-import type { Assertion } from 'vitest'
+import { expect } from 'vitest'
 import '@mszr/selenita/vitest'
 
-declare const stringArray: Assertion<string[]>
-declare const anyValue: Assertion<unknown>
-
 // Completion matchers
-stringArray.toContainCompletion('foo')
-stringArray.toContainCompletions(['foo', 'bar'])
-stringArray.toEqualCompletions(['foo', 'bar'])
+expect(['foo', 'bar']).toContainCompletion('foo')
+expect(['foo', 'bar']).toContainCompletions(['foo', 'bar'])
+expect(['foo', 'bar']).toEqualCompletions(['foo', 'bar'])
 
 // Diagnostic matchers
-anyValue.toBeClean()
-anyValue.toHaveError(2339)
-anyValue.toHaveError(/message/)
-anyValue.toHaveError(2339, /message/)
-anyValue.toHaveErrorCount(1)
+expect([]).toBeClean()
+expect([]).toHaveError(2339)
+expect([]).toHaveError(/message/)
+expect([]).toHaveError(2339, /message/)
+expect([]).toHaveErrorCount(1)
 
 // CompletionItem matchers
-anyValue.toHaveKind('property')
-anyValue.toHaveType('string')
-anyValue.toHaveDocumentation(/docs/)
-anyValue.toBeDeprecated()
+expect(undefined).toHaveKind('property')
+expect(undefined).toHaveType('string')
+expect(undefined).toHaveDocumentation(/docs/)
+expect(undefined).toBeDeprecated()
 
 // Parity matcher
-anyValue.toHaveCompletionParity()
+expect({}).toHaveCompletionParity()
 
 // Signature help matchers
-anyValue.toBeActiveOnParameter(0)
-anyValue.toHaveParameterCount(2)
+expect(null).toBeActiveOnParameter(0)
+expect(null).toHaveParameterCount(2)
 
 // Type snapshot
-anyValue.toMatchTypeSnapshot()
-anyValue.toMatchTypeSnapshot('my-snapshot')
+expect('hover').toMatchTypeSnapshot()
+expect('hover').toMatchTypeSnapshot('my-snapshot')
+
+// Asymmetric matcher type-check
+expect(['foo', 'bar']).toEqual(expect.toContainCompletion('foo'))
+expect(['foo', 'bar']).toEqual(expect.not.toContainCompletion('foo'))
+expect([]).toEqual(expect.toHaveError(2339))
+expect([]).toEqual(expect.toHaveError(/message/))
+expect([]).toEqual(expect.toHaveError(2339, /message/))
+expect([]).toEqual(expect.not.toHaveError(2339))
 
 export {}

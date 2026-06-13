@@ -113,6 +113,8 @@ export default defineConfig({
 })
 ```
 
+TypeScript only sees matcher augmentations from files in its program. If your setup file is outside `tsconfig.json`'s `include`, include it or append `@mszr/selenita/vitest` to `compilerOptions.types` so the matcher types are loaded without a local shim.
+
 ---
 
 ## What's next

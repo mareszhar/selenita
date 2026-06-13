@@ -816,6 +816,8 @@ export default defineConfig({
 
 This is the only configuration required. No `expect.extend(...)` call needed.
 
+The setup file import also carries the TypeScript matcher augmentation. If the setup file is outside `tsconfig.json`'s `include`, users must either include it or append `@mszr/selenita/vitest` to `compilerOptions.types`. They should not need to redeclare matcher signatures in a local `.d.ts` file.
+
 ### Completion matchers
 
 ```ts

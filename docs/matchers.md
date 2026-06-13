@@ -2,6 +2,18 @@
 
 Import `@mszr/selenita/vitest` once in your Vitest setup file. All matchers are then available on `expect` with full TypeScript types.
 
+Make sure that setup file is included by your `tsconfig.json`. If your setup file lives outside `include`, either include it or append `@mszr/selenita/vitest` to `compilerOptions.types`:
+
+```json
+{
+  "compilerOptions": {
+    "types": ["vitest/globals", "@mszr/selenita/vitest"]
+  }
+}
+```
+
+If you already have a `types` array, keep the existing entries and add `@mszr/selenita/vitest`. You should not need to redeclare the matcher signatures yourself.
+
 ---
 
 ## Completions

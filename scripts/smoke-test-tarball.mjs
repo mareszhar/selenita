@@ -18,11 +18,16 @@ const ROOT = resolve(fileURLToPath(import.meta.url), '..', '..')
 const ROOT_MODULES = join(ROOT, 'node_modules')
 const TSC = join(ROOT_MODULES, '.bin', 'tsc')
 
+/**
+ * @param {string} cmd
+ * @param {string} [cwd]
+ */
 function run(cmd, cwd = ROOT) {
   try {
     return execSync(cmd, { cwd, stdio: 'pipe' }).toString().trim()
   }
-  catch (err) {
+  catch (error) {
+    const err = /** @type {any} */ (error)
     const msg = err.stderr?.toString().trim() || err.stdout?.toString().trim() || err.message
     throw new Error(`Command failed: ${cmd}\n${msg}`)
   }
@@ -56,6 +61,7 @@ try {
   //    those packages' own .d.ts files are suppressed by skipLibCheck.
   const nm = join(tmpDir, 'node_modules')
 
+  /** @param {string} name */
   function symlink(name) {
     const src = join(ROOT_MODULES, name)
     if (!existsSync(src))
@@ -89,6 +95,7 @@ try {
   // 6. Minimal ESM/Bundler consumer — exercises all exports-map entries
   writeFileSync(join(tmpDir, 'check.ts'), `\
 import { cursor, defineProject, group, snippet } from '@mszr/selenita'
+import { expect } from 'vitest'
 import '@mszr/selenita/vitest'
 
 declare const _project: ReturnType<typeof defineProject>
@@ -98,6 +105,7 @@ const _completions: string[] = _q.completions
 const _hover: string | null = _q.hover
 const _g = group('apis', ['a', 'b'])
 const _s = snippet\`\${cursor}\`
+expect(_completions).toContainCompletion('x')
 void _q, _completions, _hover, _g, _s
 export {}
 `)
@@ -106,7 +114,32 @@ export {}
   console.log('[smoke] Running tsc (ESM/Bundler) against installed package...')
   run(`${TSC} --noEmit -p tsconfig.json`, tmpDir)
 
-  // 8. Write tsconfig for CJS/NodeNext consumer
+  // 8. Type-only setup fallback — users whose Vitest setup file is outside
+  //    tsconfig.include can load the matcher augmentation through compilerOptions.types.
+  writeFileSync(join(tmpDir, 'tsconfig.vitest-types.json'), JSON.stringify({
+    compilerOptions: {
+      target: 'ES2022',
+      lib: ['ES2022'],
+      module: 'ESNext',
+      moduleResolution: 'Bundler',
+      strict: true,
+      noEmit: true,
+      skipLibCheck: true,
+      types: ['vitest/globals', '@mszr/selenita/vitest'],
+    },
+    include: ['check-vitest-types.ts'],
+  }, null, 2))
+
+  writeFileSync(join(tmpDir, 'check-vitest-types.ts'), `\
+expect(['x']).toContainCompletion('x')
+expect(['x']).toEqualCompletions(['x'])
+export {}
+`)
+
+  console.log('[smoke] Running tsc (compilerOptions.types fallback) against installed package...')
+  run(`${TSC} --noEmit -p tsconfig.vitest-types.json`, tmpDir)
+
+  // 9. Write tsconfig for CJS/NodeNext consumer
   writeFileSync(join(tmpDir, 'tsconfig.cjs.json'), JSON.stringify({
     compilerOptions: {
       target: 'ES2022',
@@ -120,7 +153,7 @@ export {}
     include: ['check.cts'],
   }, null, 2))
 
-  // 9. Minimal CJS consumer — verifies the require() export path resolves correctly
+  // 10. Minimal CJS consumer — verifies the require() export path resolves correctly
   writeFileSync(join(tmpDir, 'check.cts'), `\
 import selenita = require('@mszr/selenita')
 const { cursor, defineProject, group, snippet } = selenita
@@ -134,11 +167,11 @@ void _q, _completions, _g, _s
 export {}
 `)
 
-  // 10. Type-check CJS/NodeNext consumer
+  // 11. Type-check CJS/NodeNext consumer
   console.log('[smoke] Running tsc (CJS/NodeNext) against installed package...')
   run(`${TSC} --noEmit -p tsconfig.cjs.json`, tmpDir)
 
-  // 11. Runtime ESM import check — actually load both advertised ESM entries
+  // 12. Runtime ESM import check — actually load both advertised ESM entries
   //     (tsc --noEmit only type-checks; it does not execute the module loader)
   writeFileSync(join(tmpDir, 'runtime-esm.mjs'), `\
 import { cursor, defineProject, group, snippet } from '@mszr/selenita'
@@ -148,7 +181,7 @@ void cursor, defineProject, group, snippet
   console.log('[smoke] Running runtime ESM import check...')
   run('node runtime-esm.mjs', tmpDir)
 
-  // 12. Runtime CJS require check — actually load the CJS index entry
+  // 13. Runtime CJS require check — actually load the CJS index entry
   writeFileSync(join(tmpDir, 'runtime-cjs.cjs'), `\
 const { cursor, defineProject, group, snippet } = require('@mszr/selenita')
 void cursor, defineProject, group, snippet
@@ -158,7 +191,8 @@ void cursor, defineProject, group, snippet
 
   console.log('[smoke] OK — all export entries resolve from a real tarball install')
 }
-catch (err) {
+catch (error) {
+  const err = /** @type {any} */ (error)
   console.error(`\n[smoke] FAILED: ${err.message}`)
   process.exit(1)
 }

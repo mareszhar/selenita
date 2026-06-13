@@ -14,51 +14,58 @@ import { buildMatchers } from './matchers'
 expect.extend(buildMatchers())
 
 // ── Vitest type augmentation ────────────────────────────────────────────────
-// Augmenting the `vitest` module here means that importing `@mszr/selenita/vitest`
-// is all a user needs — the custom matcher types are automatically included.
+// Augmenting Vitest's `Matchers` extension point means importing
+// `@mszr/selenita/vitest` types `expect.extend`, `expect(value).*`, and
+// `expect.*` on Vitest 4. Extending `Assertion` as well keeps older Vitest
+// versions in the peer range typed.
+
+interface SelenitaVitestMatchers {
+  // Completions
+  toContainCompletion: (name: string) => void
+  toContainCompletions: (names: string[]) => void
+  /** Order-insensitive exact match on `completions`. */
+  toEqualCompletions: (names: string[]) => void
+
+  // CompletionItem
+  toHaveKind: (kind: CompletionItemKind) => void
+  toHaveType: (type: string) => void
+  toHaveDocumentation: (doc: string | RegExp) => void
+  toBeDeprecated: () => void
+
+  // Diagnostics
+  toBeClean: () => void
+  toHaveError: ((code: number, message?: RegExp) => void) & ((message: RegExp) => void)
+  toHaveErrorCount: (count: number) => void
+
+  // Parity
+  /** Assert that all group members expose identical completions (order-insensitive). */
+  toHaveCompletionParity: () => void
+
+  // Signature help
+  toBeActiveOnParameter: (index: number) => void
+  toHaveParameterCount: (count: number) => void
+
+  // Type snapshots
+  /** Store or compare a type-level snapshot in `__type_snapshots__/`. */
+  toMatchTypeSnapshot: (name?: string) => void
+}
+
+type SelenitaVitestAsymmetricMatchers = {
+  [K in keyof Omit<SelenitaVitestMatchers, 'toHaveError'>]: SelenitaVitestMatchers[K] extends (...args: infer A) => any
+    ? (...args: A) => any
+    : never
+} & {
+  toHaveError: ((code: number, message?: RegExp) => any) & ((message: RegExp) => any)
+}
 
 declare module 'vitest' {
   // eslint-disable-next-line unused-imports/no-unused-vars
-  interface Assertion<T> {
-    // Completions
-    toContainCompletion: (name: string) => void
-    toContainCompletions: (names: string[]) => void
-    /** Order-insensitive exact match on `completions`. */
-    toEqualCompletions: (names: string[]) => void
+  interface Matchers<T = any> extends SelenitaVitestMatchers {}
 
-    // CompletionItem
-    toHaveKind: (kind: CompletionItemKind) => void
-    toHaveType: (type: string) => void
-    toHaveDocumentation: (doc: string | RegExp) => void
-    toBeDeprecated: () => void
+  // eslint-disable-next-line unused-imports/no-unused-vars
+  interface Assertion<T = any> extends SelenitaVitestMatchers {}
 
-    // Diagnostics
-    toBeClean: () => void
-    toHaveError: ((code: number, message?: RegExp) => void) & ((message: RegExp) => void)
-    toHaveErrorCount: (count: number) => void
-
-    // Parity
-    /** Assert that all group members expose identical completions (order-insensitive). */
-    toHaveCompletionParity: () => void
-
-    // Signature help
-    toBeActiveOnParameter: (index: number) => void
-    toHaveParameterCount: (count: number) => void
-
-    // Type snapshots
-    /** Store or compare a type-level snapshot in `__type_snapshots__/`. */
-    toMatchTypeSnapshot: (name?: string) => void
-  }
-
-  interface AsymmetricMatchersContaining {
-    toContainCompletion: (name: string) => unknown
-    toContainCompletions: (names: string[]) => unknown
-    toEqualCompletions: (names: string[]) => unknown
-    toHaveKind: (kind: CompletionItemKind) => unknown
-    toHaveType: (type: string) => unknown
-    toBeClean: () => unknown
-    toHaveCompletionParity: () => unknown
-  }
+  interface AsymmetricMatchersContaining extends SelenitaVitestAsymmetricMatchers {}
 }
 
 // Re-export types so consumers of /vitest don't need a separate import
