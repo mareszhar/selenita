@@ -41,19 +41,21 @@ bun run release:major   # breaking changes — X.0.0
 
 Each script:
 
-1. Bumps the `version` in `package.json` via `npm version`
-2. Publishes to npm with `--access public`
+1. Verifies that you're logged in to npm before doing anything else
+2. Runs the full publish checks locally before changing the version
+3. Bumps the `version` in `package.json`
+4. Publishes to npm with `--access public`
+5. Creates the release commit and git tag only after publish succeeds
 
-The `prepublishOnly` hook re-runs the full validate + build pipeline before publishing, so publishing with a broken state is not possible.
+If authentication or validation fails, the script exits before the version changes. If `npm publish` fails after the local bump, the script restores the version files so a failed publish does not leave behind an accidental extra release commit.
 
 ### 4. Tag and release on GitHub
 
 > **Note:** There is no `CHANGELOG.md` in this repo — this is intentional. The changelog lives exclusively as GitHub release notes (written in step 4). Do not create a `CHANGELOG.md` file.
 
-After publishing, create a GitHub release for the new tag:
+After publishing, push the release commit and tag:
 
 ```sh
-# The npm version command creates a git tag automatically
 git push && git push --tags
 ```
 

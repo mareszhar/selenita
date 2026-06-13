@@ -55,9 +55,9 @@
     "typecheck": "tsc --noEmit",
     "validate": "bun run lint && bun run typecheck && bun run test",
     "val": "bun run validate",
-    "release:patch": "npm version patch && npm publish --access public",
-    "release:minor": "npm version minor && npm publish --access public",
-    "release:major": "npm version major && npm publish --access public",
+    "release:patch": "node scripts/release.mjs patch",
+    "release:minor": "node scripts/release.mjs minor",
+    "release:major": "node scripts/release.mjs major",
     "prepublishOnly": "bun run validate && bun run build && bun run test:types && bun run test:tarball"
   },
   "peerDependencies": {
