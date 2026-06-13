@@ -1,7 +1,7 @@
 {
   "name": "@mszr/selenita",
   "type": "module",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "packageManager": "bun@1.3.14",
   "description": "IntelliSense testing for TypeScript — completions, hover, diagnostics, and more via a delightful tagged-template API.",
   "author": "Mares",
