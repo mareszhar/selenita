@@ -5,7 +5,13 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.test.ts'],
-    exclude: ['dist/**', 'node_modules/**'],
+    exclude: [
+      'dist/**',
+      'node_modules/**',
+      '__archived__/**',
+      '__references__/**',
+      '__temp__/**',
+    ],
     // beforeAll builds the TS Program eagerly (spec §15). Large projects can
     // take >5 s on a cold run; 30 s gives ample headroom without masking hangs.
     hookTimeout: 30000,

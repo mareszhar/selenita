@@ -3,7 +3,13 @@ import antfu from '@antfu/eslint-config'
 export default antfu({
   formatters: true,
   typescript: true,
-  ignores: ['dist/**', 'node_modules/**'],
+  ignores: [
+    'dist/**',
+    'node_modules/**',
+    '__archived__/**',
+    '__references__/**',
+    '__temp__/**',
+  ],
   rules: {
     // jsdoc/empty-tags fires on `/** @internal — description */` and its
     // auto-fixer is destructive: it strips the surrounding `/**`/`*/` delimiters

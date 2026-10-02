@@ -16,5 +16,12 @@
     "skipLibCheck": true
   },
   "include": ["src/**/*", "tests/**/*", "scripts/**/*.ts"],
-  "exclude": ["dist", "node_modules", "tests/consumer"]
+  "exclude": [
+    "dist",
+    "node_modules",
+    "tests/consumer",
+    "__archived__",
+    "__references__",
+    "__temp__"
+  ]
 }
