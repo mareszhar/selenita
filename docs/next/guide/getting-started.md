@@ -8,7 +8,7 @@ From install to a passing editor test in a few minutes, then the two ways to run
 pnpm add -D @mszr/selenita vitest   # or npm / bun / yarn
 ```
 
-That is everything. selenita brings the TypeScript 6 language-service API it needs, so it works whether your project compiles with TypeScript 6 or TypeScript 7. Requirements: Node 22.12+ and, for the matchers, Vitest 5.
+That is everything. selenita brings the TypeScript 6 language-service API it needs, so it installs and runs whether your project compiles with TypeScript 6 or TypeScript 7; its observations come from that TypeScript 6 service. Requirements: Node 22.12+ and, for the matchers, Vitest 5.
 
 ## 2. Your first test
 
@@ -77,8 +77,8 @@ it('guides the second argument', () => {
     import { createQuery } from './src'
     createQuery({ table: 'users' }, ${cursor})
   `
-  expect(signatureHelp?.activeParameter).toBe(1)
-  expect(signatureHelp?.parameter?.documentation).toContain('pagination')
+  expect(signatureHelp?.activeParameterIndex).toBe(1)
+  expect(signatureHelp?.activeParameter?.documentation).toContain('pagination')
 })
 ```
 
@@ -121,11 +121,11 @@ import { createProject, cursor } from '@mszr/selenita'
 
 using project = createProject({ tsconfig: './tsconfig.json' })
 
-const { completions } = project.query`
+const { completionNames } = project.query`
   import { createQuery } from './src'
   createQuery({ ${cursor} })
 `
-console.log(completions)
+console.log(completionNames)
 ```
 
 `using` disposes the project at the end of the block. Without `using`, call `project.dispose()` when you are done. Results stay readable after disposal for everything you already read.

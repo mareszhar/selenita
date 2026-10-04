@@ -4,12 +4,14 @@ How changes to selenita are planned, carried out, reviewed, and released. The me
 
 ## 1. Two speeds
 
+Records exist to coordinate and resume work, so use as many as the work needs:
+
 | Change | How it moves |
 | --- | --- |
-| **Small** — a bug fix, a doc correction, one option | Change, test, and doc update together, in one commit. No records. |
-| **Initiative** — anything breaking, multi-step, or spanning several modules | Planned in a handoff, executed against a tracker, reviewed in round reports, announced in a changelog. |
+| **Small** — a bug fix, a doc correction, one option, even a small breaking rename | Change, test, and doc update together. A breaking change always gets a changelog entry with its migration. |
+| **Initiative** — multi-step work, work spanning sessions or people, or a release-sized redesign | Planned in a handoff, executed against a tracker, reviewed in round reports, announced in a changelog. |
 
-When in doubt, it is an initiative if you would want to resume it tomorrow without re-reading the whole diff.
+It is an initiative if you would want to resume it tomorrow, or hand it to someone else, without re-reading the whole diff.
 
 ## 2. Records
 
@@ -54,7 +56,7 @@ Each rule prevents a failure that a green suite does not report.
 - **Prove host behavior before building on it.** A design that rests on what TypeScript, Vitest, or Node does opens with a probe, and states beforehand what happens if the probe fails: a named fallback, or stop and ask.
 - **Record facts, not just conclusions.** "Swapping fixtures reproduces observations exactly (probe: `fixture-activation`)" lets the next reader verify; "activation works" does not.
 - **Prove each change is load-bearing.** See [evidence §4](./evidence.md#4-proving-a-change-is-load-bearing).
-- **Every new export has a caller** — in the docs' examples and in a reference project — before its slice closes.
+- **Every public capability has a concrete use case** — a realistic test it makes clearer or possible, shown in the docs — and evidence before its slice closes. A caller in a real project is strong evidence, not a prerequisite. Equally, low adoption of an existing capability starts an investigation ([vision §5](../vision.md#5-earning-weight)) rather than a removal.
 - **Disclose weak evidence.** Say which leg of an argument is thin; separate what was run from what was only read.
 - **Raise environment blocks.** Never substitute a toolchain version or edit a tracked script to suit one machine.
 - **Challenge the plan.** An implementer who believes a step is wrong says so before building it. Silent compliance and silent deviation are both failures.
@@ -74,13 +76,15 @@ For the reviewer: read the tracker's table first, then every changed file in ful
 
 ## 8. Releasing
 
-A version numbers the contract, not the diff. Below 1.0: breaking changes bump the minor (0.3.0), everything else the patch. [Vision §8](../vision.md#8-road-to-10) defines when 1.0 is due.
+A version numbers the contract, not the diff. Below 1.0: breaking changes bump the minor (0.3.0), everything else the patch. [Vision §8](../vision.md#8-road-to-10) describes when 1.0 is due.
+
+Publishing and Git are separate acts, both owned by the maintainer. An agent prepares a release; it publishes or touches Git only when asked, and authorization for one is not authorization for the other.
 
 1. `bun run verify` is green on a clean tree, with the pinned toolchain.
 2. The changelog is final and every breaking change has a migration example.
-3. `bun run release:minor` (or `:patch`). The script checks the tree and npm auth, runs `verify`, bumps the version, publishes, then commits and tags `🔖 release v<version>`.
+3. `bun run release:minor` (or `:patch`). The script checks the tree and npm auth, runs `verify`, bumps the version, and publishes. It never commits, tags, or pushes.
    - If anything fails **before** publishing, it restores the version files and exits.
-   - If publishing **succeeded** but committing or tagging failed, it says so and leaves the bumped files in place: the version exists on npm, and the commit and tag are finished by hand. When a publish outcome is unclear, check `npm view @mszr/selenita versions` before retrying.
-4. `git push && git push --tags`.
+   - Once publishing succeeds, the bumped files stay: the version exists on npm. The script prints the Git commands that finish the release. When a publish outcome is unclear, check `npm view @mszr/selenita versions` before retrying.
+4. The maintainer finishes the release in Git: commit `🔖 release v<version>`, tag `v<version>`, push with tags.
 5. Create the GitHub release for the tag, using the changelog as its notes. The GitHub release is the changelog's permanent home; the repository has no `CHANGELOG.md`.
-6. Move the reference projects onto the release, using the changelog's migration notes.
+6. Migrate the suites you maintain, using the changelog's migration notes — the first real test of whether they are mechanical.

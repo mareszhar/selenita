@@ -42,9 +42,9 @@ Everything in selenita is one of four things:
   project                    fixture                         observations
   ───────                    ───────                         ────────────
   your user's editor:   +    real TypeScript source,   ──▶   what the editor reports:
-  tsconfig, files,           one file or several,            completions · hover ·
-  aliases, plugins           with markers:                   signature help · rename ·
-                               cursor  ⌶  a point            diagnostics · fixes
+  tsconfig, preferences,     one file or several,            completions · hover ·
+  files, aliases, plugins    with markers:                   signature help · inlay hints ·
+                               cursor  ⌶  a point            rename · diagnostics · code fixes
                                mark    ▭  some text                   │
                                                                       ▼
                                                              ordinary assertions
@@ -65,10 +65,10 @@ When people test their editor experience, they are checking one of five promises
 
 | Your API promises to… | The user experiences… | selenita observes | Typical assertion |
 | --- | --- | --- | --- |
-| **Suggest** | typing `.` or `{` offers the right next step, and nothing internal | completions | `toSuggest`, `toSuggestOnly`, `toHaveCompletionParity` |
-| **Explain** | hovering or browsing completions teaches what a thing is *for* | hover, completion details | `hover?.documentation`, `toSuggest(names, { documented: true })` |
-| **Report** | a mistake is flagged where it was made, in words that help | diagnostics, fixes | `toHaveError(code, message, { on })`, `toBeClean` |
-| **Guide** | while typing arguments, the editor shows which one you are on | signature help | `signatureHelp?.parameter` |
+| **Suggest** | typing `.` or `{` offers the right next step, nothing internal, and accepting it inserts the right code | completions (names, insertion, details) | `toSuggest`, `toSuggestOnly`, `toHaveCompletionParity`, `insertText` |
+| **Explain** | hovering or browsing completions teaches what a thing is *for* | hover, completion details | `hover?.documentation`, `toSuggest(names, { requireDocumentation: true })` |
+| **Report** | a mistake is flagged where it was made, in words that help | diagnostics, code fixes | `toHaveError(code, message, { on })`, `toBeClean` |
+| **Guide** | while typing or reading a call, the editor shows which argument is which | signature help, inlay hints | `signatureHelp?.activeParameter`, `inlayHints` |
 | **Navigate** | rename and references keep identity across files | rename | `rename.locations` |
 
 The [promises guide](./guide/promises.md) is a cookbook for each.
@@ -79,30 +79,34 @@ Every change to selenita answers to these. None outranks the guiding question; t
 
 1. **Write the example, not the harness.** Fixtures are real TypeScript. Markers are values, not offsets or magic comments. Setup is optional: `defineProject()` with no arguments finds your tsconfig.
 
-2. **The common case is effortless; precision is one step away.** `hover?.text` reads the whole tooltip; `hover?.display` and `hover?.documentation` separate the shape from the prose. `{ on: 'paddin' }` locates an error by its text; `{ on: result.range('typo') }` pins it to one exact occurrence.
+2. **The common case is effortless; precision is one step away.** `hover?.text` reads the whole tooltip; `hover?.displayText` and `hover?.documentation` separate the shape from the prose. `{ on: 'paddin' }` locates an error by its text; `{ on: result.rangeOf('typo') }` pins it to one exact occurrence.
 
 3. **Evidence is trustworthy.** A service failure is never reported as an empty result. Displays, positions, and module resolution are TypeScript's own, never rewritten for convenience. An unknown option, marker name, or misuse throws instead of being ignored. Green means the observation happened.
 
-4. **Pay only for what you read.** Observations are computed on first access. A test that reads `completions` never pays for hovers, details, or diagnostics.
+4. **Pay only for what you read.** Observations are computed on first access. A test that reads `completionNames` never pays for hovers, details, or diagnostics.
 
 5. **A red test explains itself.** Failures show the fixture excerpt, the marker, what was expected, and what the editor actually said — so the fix is usually obvious without re-running anything.
 
 6. **Names predict.** One word per concept, used identically in code, types, errors, and docs. The vocabulary lives in [language](./language.md).
 
-7. **Compose before you specialize.** One fixture model (files + markers), one location model (ranges), one fan-out model (arrays + scopes). A new need is first met by an option on an existing concept, then by composition, and only last by a new concept.
+7. **Preserve capabilities; simplify their expression.** What people can test is precious; how they spell it is negotiable. A capability is retired only when the model expresses it as clearly and reliably — never because a spelling went unused.
 
-8. **Plain values, ordinary assertions.** Results are plain data that work with any `expect`. Matchers are sugar that improves failure output; nothing requires them.
+8. **Compose before you specialize.** One fixture model (files + markers), one location model (ranges), one configuration model (layers), one fan-out model (arrays + scopes). A new need is first met by an option on an existing concept, then by composition, and only last by a new concept.
 
-9. **Ownership is explicit.** The project owns the language service. The runner adapter owns lifecycle. Your test suite owns domain policy — which names count as internal, what a good hover says.
+9. **Plain data, ordinary assertions.** Results are frozen data, computed when first read, that work with any `expect`. Matchers are sugar that improves failure output; nothing requires them, and any judgment harder than a one-liner (completion parity) is also available as data from the core.
 
-10. **Small on purpose.** selenita stays tiny so it stays obvious. Every addition earns its weight (§5).
+10. **Ownership is explicit.** The project owns the language service. The runner adapter owns lifecycle. Your test suite owns domain policy — which names count as internal, what a good hover says.
+
+11. **Small on purpose.** selenita stays small so it stays obvious. Small means few ideas to learn, not few things to do: every concept earns its weight (§5), and no capability is pushed back onto the people writing tests.
 
 ## 5. Earning weight
 
-selenita grows only when a change makes a real test clearer, its evidence stronger, or its setup disappear. Before adding or keeping anything, answer:
+The measure of selenita's size is how many ideas someone must hold to express an editor promise — and how much machinery its absence would push into their tests. Export counts and line counts are hints, not the measure.
+
+**Adding.** A change earns its place when it makes a realistic test clearer, its evidence stronger, or its setup disappear:
 
 ```text
-Which real test is awkward, weak, or impossible today?            → show it
+Which realistic test is awkward, weak, or impossible today?       → show it
 What does the same test look like after the change?               → show it
 Which responsibility disappears from the person writing tests?    → name it
 What concept, option, or export does selenita take on in return?  → name it
@@ -110,9 +114,18 @@ Does the same idea serve a second, different case?                → show it
 Which test turns red if this promise breaks?                      → name it
 ```
 
-A good change usually has a bonus: ranges made diagnostic locality testable, and the same ranges made rename locations and fix edits comparable for free. A change that needs its own special vocabulary, or serves exactly one call site, has not earned its place yet.
+A good change usually has a bonus: ranges made diagnostic locality testable, and the same ranges made rename locations, fix edits, and inlay positions comparable for free. A change that needs its own special vocabulary to serve one scenario has not earned its place yet.
 
-Removal is held to the same bar. A feature with no caller is weight, however cheap it looks.
+**Changing or removing.** Separate the capability (what someone can test) from its spelling (how they write it):
+
+```text
+Which editor promise does it let someone test?                    → one realistic example
+Does the current model express that as clearly and reliably?     → the replacement, in full
+What gets harder without it?                                     → lost precision, lost safety,
+                                                                    repeated requests, merge code
+```
+
+Retire a spelling when the model expresses its purpose as well or better. Retire a capability only when the promise it serves is not a reasonable thing to want. Low adoption starts an investigation — was it hard to discover, awkward to use, or genuinely unneeded? — and never settles one.
 
 ## 6. Quality bar
 
@@ -137,14 +150,14 @@ selenita **is not**:
 | A test runner, or a matcher pack per runner | The core is runner-free; Vitest is the one adapter |
 | Embedded-language tooling (Vue, Svelte, MDX templates) | A TypeScript language-service plugin, when one exists, via `plugins` |
 
-**Backend.** Observations come from the TypeScript 6 language-service API, which selenita brings with it. Your project may use TypeScript 6 or 7. TypeScript 7's native compiler is designed for checking parity with 6; when it exposes a stable language-service API, a native backend can follow without changing the model.
+**Backend.** selenita brings the TypeScript 6 language-service API with it, so it installs and runs in projects on TypeScript 6 or 7; its observations come from that TypeScript 6 service. TypeScript 7 aims for parity but is a separate implementation, so selenita states which backend produced its evidence rather than claiming equivalence. When TypeScript 7 exposes a stable language-service API, a native backend can follow without changing the model.
 
 ## 8. Road to 1.0
 
-selenita stays below 1.0 while its model is still being proven in real suites. It declares 1.0 when:
+selenita stays below 1.0 while its model is still being proven by real use. There is no date: usage decides. 1.0 is due when all of these hold:
 
-1. the reference projects (h3-dux, idb-dux, Vanity, Mana) run their complete editor suites on the current contract, including Vanity's plugin rename fixture;
-2. one full release cycle passes with no breaking change to the public contract;
-3. the package gate proves fresh consumers on TypeScript 6 and 7 with the supported Vitest major.
+1. **The model has stopped moving.** Real suites — of different shapes, testing different kinds of APIs — have run on one contract through at least one full release with no breaking change needed.
+2. **Every public capability has a documented purpose and evidence**, and none is waiting on a known redesign.
+3. **The package gate proves the supported toolchains**: fresh consumers on each supported TypeScript and Vitest major.
 
 Until then, breaking changes are allowed when they serve the guiding question, and every one ships with a migration note an agent can apply mechanically.

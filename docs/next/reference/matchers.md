@@ -4,9 +4,9 @@ Importing `@mszr/selenita/vitest` installs six matchers on Vitest's `expect`, wi
 
 | Promise | Matcher | Passes when |
 | --- | --- | --- |
-| Suggest | [`toSuggest(names, options?)`](#tosuggest) | every name is suggested (and documented, if asked) |
+| Suggest | [`toSuggest(names, options?)`](#tosuggest) | every name is suggested (and documented, when required) |
 | Suggest | [`toSuggestOnly(names)`](#tosuggestonly) | the suggested names equal `names` as a set |
-| Suggest | [`toHaveCompletionParity()`](#tohavecompletionparity) | every member suggests the same set |
+| Suggest | [`toHaveCompletionParity()`](#tohavecompletionparity) | two or more members suggest the same set |
 | Report | [`toBeClean()`](#tobeclean) | there are no errors |
 | Report | [`toHaveError(code?, message?, options?)`](#tohaveerror) | some error matches every criterion given |
 | Report | [`toHaveErrorCount(count)`](#tohaveerrorcount) | there are exactly `count` errors |
@@ -19,11 +19,11 @@ Matchers accept the most natural thing to hand them:
 
 | Matcher family | Accepts |
 | --- | --- |
-| Suggest | an `Observations` (`result.at(name)`, or a single-cursor result), or a `readonly string[]` of names |
-| Parity | a record of `Observations` (`result.across(name)`) or of `readonly string[]` |
+| Suggest | an `Observations` (`result.at(name)`, or a single-cursor result), a `readonly Completion[]` (`completions`), or a `readonly string[]` (`completionNames`) |
+| Parity | a record of `Observations` (`result.atEach(name, scopes)`), of `readonly Completion[]`, or of `readonly string[]` |
 | Report | a `readonly Diagnostic[]` (`errors`, `diagnostics`), or any result |
 
-Prefer passing observations and results: failures can then show the fixture and the cursor. Name arrays work everywhere except `toSuggest(…, { documented: true })`, which needs completion details.
+Prefer passing observations and results: failures can then show the fixture and the cursor. Name arrays work everywhere except `toSuggest(…, { requireDocumentation: true })`, which needs completions, not just their names.
 
 Any other receiver fails with a message naming what was received and what the matcher expects.
 
@@ -31,7 +31,7 @@ Any other receiver fails with a message naming what was received and what the ma
 
 ```ts
 interface Matchers<R> {
-  toSuggest: (names: string | readonly string[], options?: { documented?: boolean }) => R
+  toSuggest: (names: string | readonly string[], options?: { requireDocumentation?: boolean }) => R
 }
 ```
 
@@ -39,11 +39,13 @@ interface Matchers<R> {
 | --- | --- |
 | `toSuggest('a')` | `a` is suggested |
 | `toSuggest(['a', 'b'])` | every name is suggested; others may be too |
-| `toSuggest(['a', 'b'], { documented: true })` | every name is suggested, and each has non-blank documentation |
+| `toSuggest(['a', 'b'], { requireDocumentation: true })` | every name is suggested, and each has non-blank documentation |
 | `.not.toSuggest('a')` | `a` is not suggested |
 | `.not.toSuggest(['a', 'b'])` | **none** of the names is suggested |
 
-Negating a list means "none of these" — the reading of the sentence, and the promise behind every negated list in practice. `documented` cannot be negated; the matcher throws if asked.
+Negating a list means "none of these". That is a deliberate quantifier, not the logical complement of the positive form ("not all of these"): it is how the sentence reads, and the promise a forbidden-names check makes. `requireDocumentation` cannot be negated; the matcher throws if asked.
+
+`requireDocumentation` resolves details only for the requested names — one request per name, never the whole list. When a name appears more than once (from different `source` modules), every occurrence must be documented.
 
 ```text
 expected cursor 'verbs' to suggest 'patch'
@@ -85,9 +87,11 @@ interface Matchers<R> {
 }
 ```
 
-Receives a record of observations (typically `result.across(name)`) or of name lists. Passes when every member suggests the same set of names; order and duplicates are ignored. An empty record or a single member passes. Negated, passes when at least two members differ.
+Receives a record of observations (typically `result.atEach(name, scopes)`) or of name lists. Passes when every member suggests the same set of names; order and duplicates are ignored. Negated, passes when some members differ.
 
-The failure names a baseline — the set shared by the most members, ties going to the first member — and what each other member adds or lacks:
+A comparison needs at least two members: an empty or single-member record throws in either form, because it almost always means a fan-out lost a member. List the expected scopes in `atEach(name, scopes)` so a missing member fails before parity is judged.
+
+The judgment is [`compareCompletions`](./api.md#comparecompletions), available as data outside Vitest. The failure names a baseline — the set shared by the most members, ties going to the first member — and what each other member adds or lacks:
 
 ```text
 expected completion parity across 3 members at 'where'
@@ -128,7 +132,7 @@ Passes when **some** error (severity `error`) matches every criterion given:
 | --- | --- |
 | `code` | `diagnostic.code === code` |
 | `message: string` | the message contains the string |
-| `message: RegExp` | the pattern matches the message; `g`/`y` flags never carry state between checks |
+| `message: RegExp` | a fresh copy of the pattern, with the same flags and `lastIndex` 0, matches the message — so `g`/`y` never carry state between checks, `y` still anchors at the start, and the caller's pattern is untouched |
 | `on: string` | the diagnostic's `range.text` equals the string |
 | `on: Range` | the diagnostic's range has the same file, start, and end |
 
@@ -166,7 +170,7 @@ The augmentation follows Vitest's extension point exactly:
 ```ts
 declare module 'vitest' {
   interface Matchers<R extends void | Promise<void> = void | Promise<void>, T = unknown> {
-    toSuggest: (names: string | readonly string[], options?: { documented?: boolean }) => R
+    toSuggest: (names: string | readonly string[], options?: { requireDocumentation?: boolean }) => R
     // …
   }
 }

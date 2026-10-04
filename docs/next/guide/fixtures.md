@@ -19,7 +19,7 @@ const result = project.query`
   import { fruit } from './src'
   fruit.${cursor}
 `
-result.completions // what the editor suggests after typing `fruit.`
+result.completionNames // what the editor suggests after typing `fruit.`
 ```
 
 **One cursor** can be bare. Read its observations directly from the result.
@@ -52,8 +52,8 @@ Rules, each enforced with an error that names the fix:
 | Rule | Why |
 | --- | --- |
 | A bare cursor must be the only cursor. | Bare means "the one"; two would be ambiguous. |
-| Names are unique within a fixture. | `at(name)` must mean one place. Scope reused snippets with `.for()`. |
-| `project.check` takes no cursors. | `check` reports diagnostics; use `query` to ask at a point, or `mark` to locate text. |
+| Names are unique within a fixture. | `at(name)` must mean one place. Scope reused snippets with `.scope()`. |
+| `project.check` takes no bare cursor. | `check` asks no questions at points, so an unnamed cursor could never be used. Named cursors and marks are fine: in a check they are locations. |
 | `project.query` needs at least one cursor or mark. | A query asks somewhere; use `check` for diagnostics alone. |
 
 ## 2. Marks — what you point at
@@ -67,10 +67,10 @@ const result = project.check`
   declare function style(rule: { padding?: number }): void
   style({ ${mark('typo')`paddin`}: 8 })
 `
-expect(result.errors).toHaveError(2561, { on: result.range('typo') })
+expect(result.errors).toHaveError(2561, { on: result.rangeOf('typo') })
 ```
 
-`result.range('typo')` returns a [range](../reference/api.md#range): the file, start, end, and text of the mark. Ranges compare with `toEqual`, so a mark is also how you state expected locations for rename and fixes.
+`result.rangeOf('typo')` returns a [range](../reference/api.md#range): the file, start, end, and text of the mark. Ranges compare with `toEqual`, so a mark is also how you state expected locations for rename and fixes.
 
 Marks can contain anything a fixture can — including cursors:
 
@@ -89,7 +89,7 @@ const result = project.query`
   void tokens.${mark('brand')`brand`}
 `
 result.at('brand').hover // hover over `brand`
-result.range('brand') // where `brand` is
+result.rangeOf('brand') // where `brand` is
 ```
 
 When the text is unique in the fixture, you often need no mark at all: `{ on: 'paddin' }` locates an error by the text it underlines. Reach for a mark when the same text appears more than once, or when you compare locations across files.
@@ -123,32 +123,32 @@ const result = project.query`
   import { db } from './src'
   db.findMany(${where})
 `
-result.at('where').completions
+result.at('where').completionNames
 ```
 
-**Scopes keep reused names unique.** `.for(scope)` prefixes every marker inside the snippet:
+**Scopes keep reused names unique.** `.scope(name)` prefixes every marker inside the snippet:
 
 ```ts
 const result = project.query`
   import { db } from './src'
-  db.findMany(${where.for('many')})
-  db.findOne(${where.for('one')})
+  db.findMany(${where.scope('many')})
+  db.findOne(${where.scope('one')})
 `
-expect(result.at('many.where')).toSuggestOnly(result.at('one.where').completions)
+expect(result.at('many.where')).toSuggestOnly(result.at('one.where').completionNames)
 ```
 
 Scopes nest from the outside in, so every name reads like a path you can trace by eye:
 
 ```ts
 const inner = snippet`{ ${cursor('field')} }`
-const outer = snippet`{ nested: ${inner.for('inner')} }`
+const outer = snippet`{ nested: ${inner.scope('inner')} }`
 
-project.query`api(${outer.for('ctx')})` // → result.at('ctx.inner.field')
+project.query`api(${outer.scope('ctx')})` // → result.at('ctx.inner.field')
 ```
 
 ## 5. Arrays — fan-out
 
-An interpolated array is joined in order. Map data to snippets and the fixture builds itself:
+An interpolated array is joined in order, **with nothing between elements** — exactly like the rest of the template. Map data to snippets and the fixture builds itself; start each element with `\n` (or end it with `;`) so the elements become separate statements:
 
 ```ts
 const factories = ['defineVerb', 'defineSubject', 'defineGate'] as const
@@ -161,19 +161,32 @@ for (const name of factories)
   expect(result.at(name)).toSuggest('description')
 ```
 
-When each element carries the same marker names, scope each element. `result.across(name)` then gathers that cursor from every scope — the shape parity assertions expect:
+Forgetting the boundary produces `defineVerb({ })defineSubject({ })` — a syntax error the editor may still offer completions around. `result.errors` will show it; `toBeClean()` on a fan-out fixture is a cheap guard.
+
+When each element carries the same marker names, scope each element. `result.atEach(name, scopes)` then gathers that cursor from every listed scope — the shape parity assertions expect:
 
 ```ts
 const dbs = ['officialDb', 'baselineDb'] as const
 
 const result = project.query`
   ${setup}
-  ${dbs.map(db => snippet`${db}.useQuery({ ${cursor('root')} })`.for(db))}
+  ${dbs.map(db => snippet`\n${db}.useQuery({ ${cursor('root')} })`.scope(db))}
 `
-expect(result.across('root')).toHaveCompletionParity()
+expect(result.atEach('root', dbs)).toHaveCompletionParity()
 ```
 
-`across('root')` returns `{ officialDb: …, baselineDb: … }`: one entry per scope that contains a cursor named `root`.
+`atEach('root', dbs)` returns `{ officialDb: …, baselineDb: … }`, and throws if a listed scope has no `root` cursor — so a member that lost its cursor fails loudly instead of quietly dropping out of the comparison. Without the list, `atEach('root')` returns every scope that has one.
+
+**Scopes namespace markers, not code.** When elements declare the same local names, give each its own block:
+
+```ts
+const result = project.query`
+  ${cases.map(c => snippet`\n{
+    const api = ${c.factory}
+    api.${cursor('members')}
+  }`.scope(c.name))}
+`
+```
 
 ## 6. Several files
 
@@ -182,18 +195,17 @@ Pass a record instead of a template when the scenario spans files, when the file
 ```ts
 const result = project.query({
   'colors.ts': snippet`
-    import { defineTokens } from '@mszr/vanity'
-    export const colors = defineTokens({ color: { ${mark('definition')`brand`}: '#635bff' } })
+    export const colors = { ${mark('definition')`brand`}: '#635bff' }
   `,
   'consumer.ts': snippet`
     import { colors } from './colors'
-    void colors.color.${mark('use')`brand`}
+    void colors.${mark('use')`brand`}
   `,
 })
 
 expect(result.at('use').rename.locations).toEqual([
-  result.range('definition'),
-  result.range('use'),
+  result.rangeOf('definition'),
+  result.rangeOf('use'),
 ])
 ```
 

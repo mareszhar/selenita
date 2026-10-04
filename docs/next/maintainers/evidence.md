@@ -19,7 +19,7 @@ Do not persist a test whose subject is the repository (a file exists, a word is 
 it('reports service failures instead of empty completions', () => {
   using project = createProject({ tsconfig: false, plugins: [throwingCompletions] })
   const result = project.query`const fruit = { apple: 1 }; fruit.${cursor}`
-  expect(() => result.completions).toThrow(/could not collect completions/)
+  expect(() => result.completionNames).toThrow(/could not collect completions/)
 })
 
 it('keeps a genuine absence empty', () => {
@@ -28,7 +28,7 @@ it('keeps a genuine absence empty', () => {
     const fruit = { apple: 1 }
     // inside a comment ${cursor}
   `
-  expect(result.completions).toEqual([]) // the editor offers nothing here
+  expect(result.completionNames).toEqual([]) // the editor offers nothing here
   expect(result.hover).toBeNull()
 })
 ```
@@ -39,7 +39,7 @@ The plugin seam doubles as failure injection: a plugin whose `getCompletionsAtPo
 
 **Recovery where the contract promises it.** After a failure, the next query on the same project works. After disposal, values already read remain.
 
-**The real environment.** Tests run against the backend selenita ships. A fixture that disables a default (symlinked packages, `skipLibCheck`) proves nothing about the default; the default gets its own evidence.
+**The real environment.** Tests run against the backend selenita ships. A fixture that disables a default (symlinked packages, `skipLibCheck`) proves nothing about the default; the default gets its own evidence. A capability advertised for real-world tools (plugins, say) is proven with at least one real tool, not only a synthetic stand-in.
 
 ## 3. Gates
 
@@ -50,7 +50,7 @@ The plugin seam doubles as failure injection: a plugin whose `getCompletionsAtPo
 | Core tests | Fixtures, observations, laziness and activation, failures, lifecycle, plugins, resolution, matchers and their failure output | `bun run test` |
 | Self-DX | selenita's own editor experience, tested with selenita: marker names autocomplete in `at()`, options are documented, matchers have docs | part of `bun run test` (`tests/selenita.dx.test.ts`) |
 | Strict consumer | The built declarations compile with `skipLibCheck: false` under Vitest 5, including async and asymmetric matcher forms | `bun run test:types` |
-| Package | A packed tarball installs into a fresh consumer that has **TypeScript 7** and Vitest 5 (and no TypeScript 6 of its own), runs a real Vitest file with `defineProject` and every matcher, imports the core from ESM and `require()` | `bun run test:package` |
+| Package | A packed tarball installs into fresh consumers — one on TypeScript 6, one on **TypeScript 7** with no TypeScript 6 of its own — each with Vitest 5; each compiles strictly, runs a real Vitest file with `defineProject`, a plugin, a record fixture, and every matcher, and imports the core from ESM and `require()`. This proves installation and declarations on both; observations come from the bundled TypeScript 6 in both. | `bun run test:package` |
 
 `bun run validate` runs the first four; `bun run verify` runs all of them. A release runs `verify`.
 
@@ -64,7 +64,7 @@ This is a review practice, not a persisted meta-test.
 
 ## 5. Performance evidence
 
-Performance claims need numbers from `scripts/bench.ts`: a small synthetic project and one realistic one, cold and warm, reporting program build time, per-observation time, and the effect of the shared document registry. Record toolchain versions, hardware, and repetitions with the numbers. A change to activation, laziness, or the registry includes a before/after run in its review.
+Performance claims need numbers from `scripts/bench.ts`: a small synthetic project and one realistic one, cold and warm, reporting program build time, per-observation time, re-activation cost, and the effect of the shared document registry on time and retained memory. Record toolchain versions, hardware, and repetitions with the numbers. A change to activation, laziness, or the registry includes a before/after run in its review.
 
 ## 6. Documentation evidence
 

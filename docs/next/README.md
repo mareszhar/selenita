@@ -1,5 +1,7 @@
 # selenita documentation
 
+> These are the staged docs for selenita 0.3.0, which is not released yet. They move into `docs/` with the release; until then, `docs/` describes the published version.
+
 Every fact has one home. Start from what you want to do:
 
 | I want to… | Read |
@@ -7,7 +9,7 @@ Every fact has one home. Start from what you want to do:
 | understand what selenita is for and how it thinks | [Vision](./vision.md) |
 | write my first editor test | [Getting started](./guide/getting-started.md) |
 | build fixtures: cursors, marks, snippets, several files | [Fixtures](./guide/fixtures.md) |
-| test completions, hovers, errors, signature help, rename | [Testing the editor promises](./guide/promises.md) |
+| test completions, hovers, errors, signature help, inlay hints, rename | [Testing the editor promises](./guide/promises.md) |
 | configure projects, plugins, performance, testing kits | [Projects](./guide/projects.md) |
 | know exactly what an API or matcher does | [API reference](./reference/api.md) · [Matcher reference](./reference/matchers.md) |
 | learn the words selenita uses | [Language](./language.md) |

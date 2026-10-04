@@ -7,7 +7,7 @@ Editor tests check one of five promises your API makes to the people using it. T
 | **Suggest** | typing `.` or `{` offers the right next step, and nothing internal | [§1](#1-suggest) |
 | **Explain** | hovering or browsing completions teaches what a thing is *for* | [§2](#2-explain) |
 | **Report** | a mistake is underlined where it was made, in words that help | [§3](#3-report) |
-| **Guide** | while typing arguments, the editor shows which one you are on | [§4](#4-guide) |
+| **Guide** | while typing or reading a call, the editor shows which argument is which | [§4](#4-guide) |
 | **Navigate** | rename keeps identity across files | [§5](#5-navigate) |
 
 [§6](#6-strong-evidence) collects the habits that keep editor tests honest.
@@ -55,7 +55,7 @@ expect(result).toSuggestOnly(['/fruits', '/fruits/:id/reserve', '/checkout'])
 When the editor offers an intended extra entry, such as an error hint your types surface while a value is still invalid, state both facts:
 
 ```ts
-const names = result.completions.filter(name => !name.startsWith('MYLIBERR_'))
+const names = result.completionNames.filter(name => !name.startsWith('MYLIBERR_'))
 expect(names).toSuggestOnly(['inviteCode', 'id'])
 ```
 
@@ -68,39 +68,64 @@ const queries = ['db.findMany', 'db.findOne', 'db.aggregate'] as const
 
 const result = project.query`
   import { db } from './src'
-  ${queries.map(api => snippet`\n${api}({ where: { ${cursor('where')} } })`.for(api))}
+  ${queries.map(api => snippet`\n${api}({ where: { ${cursor('where')} } })`.scope(api))}
 `
-expect(result.across('where')).toHaveCompletionParity()
+expect(result.atEach('where', queries)).toHaveCompletionParity()
 ```
 
-On failure, the matcher shows the majority set and what each divergent member added or lost. Parity also holds when every set is empty, so add a known member when the scenario promises one:
+Passing `queries` to `atEach` makes membership explicit: if one member lost its cursor, the test fails naming it, instead of comparing the rest. On failure, the matcher shows the majority set and what each divergent member added or lost. Parity also holds when every set is empty, so add a known member when the scenario promises one:
 
 ```ts
-for (const observed of Object.values(result.across('where')))
+for (const observed of Object.values(result.atEach('where', queries)))
   expect(observed).toSuggest('status')
 ```
+
+Outside Vitest, `compareCompletions(result.atEach('where', queries))` returns the same judgment as data.
 
 For just two positions, `toSuggestOnly` reads naturally:
 
 ```ts
-expect(result.at('hook')).toSuggestOnly(result.at('once').completions)
+expect(result.at('hook')).toSuggestOnly(result.at('once').completionNames)
 ```
+
+### What accepting a suggestion does
+
+A name in the list proves discovery. What happens when the user accepts it is a separate promise — and each completion carries it:
+
+```ts
+const result = project.query`
+  const fruit = { 'red-apple': 1, kiwi: 2 }
+  fruit.${cursor}
+`
+const completion = result.findCompletion('red-apple')
+expect(completion).toMatchObject({ insertText: '["red-apple"]' })
+expect(completion?.replacementRange?.text).toBe('.') // fruit.  →  fruit["red-apple"]
+```
+
+With auto-import suggestions turned on (`preferences: { includeCompletionsForModuleExports: true }`), the same completion tells you where an import would come from, and `codeActions` holds the import edit it would add:
+
+```ts
+const completion = result.findCompletion({ name: 'createClient', source: '@acme/http' })
+expect(completion?.codeActions[0]?.edits[0]?.newText).toContain(`from '@acme/http'`)
+```
+
+This is how to promise that users auto-import your public entry, never a deep internal path.
 
 ## 2. Explain
 
 ### Hover: shape and purpose
 
-A hover has two parts users read differently: the **display** (the signature or type, in a code block) and the **documentation** (the prose). selenita keeps them apart, and also gives you the whole tooltip:
+A hover has two parts users read differently: the **display text** (the signature or type, in a code block) and the **documentation** (the prose). selenita keeps them apart, and also gives you the whole tooltip:
 
 ```ts
 const { hover } = project.query`
   import { createQuery } from './src'
   ${cursor}createQuery
 `
-hover?.display // 'function createQuery(options: QueryOptions): Query'
+hover?.displayText // 'function createQuery(options: QueryOptions): Query'
 hover?.documentation // 'Build a typed query against one table.'
 hover?.tags // [{ name: 'example', text: "createQuery({ table: 'users' })" }]
-hover?.text // display, blank line, documentation, tags — as a reader sees it
+hover?.text // display text, blank line, documentation, tags — as a reader sees it
 ```
 
 Assert the part your promise is about:
@@ -109,19 +134,19 @@ Assert the part your promise is about:
 // "hover teaches what it is for": the prose
 expect(hover?.documentation).toMatch(/^Build a typed query/)
 
-// "the type reads as the user's shape, not our machinery": the display
-expect(hover?.display).toContain('pricePerKg: number')
-expect(hover?.display).not.toMatch(/ObjectSchema|SerializeObject/)
+// "the type reads as the user's shape, not our machinery": the display text
+expect(hover?.displayText).toContain('pricePerKg: number')
+expect(hover?.displayText).not.toMatch(/ObjectSchema|SerializeObject/)
 ```
 
-A display check against `text` would also scan the documentation, so prose mentioning an internal name could fail a leak guard, and documentation could satisfy a shape check. Keep them separate.
+A shape check against `text` would also scan the documentation, so prose mentioning an internal name could fail a leak guard, and documentation could satisfy a shape check. Keep them separate.
 
 ### Compact displays
 
 When the promise is "this type renders compactly", pin the display exactly. An inline snapshot is the most readable form:
 
 ```ts
-expect(hover?.display).toMatchInlineSnapshot(`"const handle: TokenHandle<'color'>"`)
+expect(hover?.displayText).toMatchInlineSnapshot(`"const handle: TokenHandle<'color'>"`)
 ```
 
 selenita never rewrites displays — no alias expansion, no trimming — so a snapshot captures what users see.
@@ -135,7 +160,7 @@ const result = project.query`
   import * as runtime from '@acme/kit/runtime'
   runtime.${cursor}
 `
-expect(result).toSuggest(PUBLIC_RUNTIME_EXPORTS, { documented: true })
+expect(result).toSuggest(PUBLIC_RUNTIME_EXPORTS, { requireDocumentation: true })
 ```
 
 ```text
@@ -144,10 +169,10 @@ expected cursor to suggest 15 names, each documented
   undocumented: bindPort, ports
 ```
 
-"Documented" means non-blank documentation. For a specific sentence, read the item:
+"Documented" means non-blank documentation. For a specific sentence, read the completion:
 
 ```ts
-expect(result.completionItem('compiler')?.documentation).toContain('Compiler options')
+expect(result.findCompletion('compiler')?.documentation).toContain('Compiler options')
 ```
 
 ## 3. Report
@@ -198,7 +223,7 @@ const result = project.check`
   ${prelude}
   q({ tagName: {}, tasks: { $: { where: { ${mark('key')`tagName`}: 'x' } } } })
 `
-expect(result.errors).toHaveError(/WHERE_KEY_UNKNOWN/, { on: result.range('key') })
+expect(result.errors).toHaveError(/WHERE_KEY_UNKNOWN/, { on: result.rangeOf('key') })
 ```
 
 If TypeScript underlines a wider expression than you expected, the failure shows both underlines. That is the finding: improve the types so the error lands on the key, or mark the wider expression if that is the experience you intend.
@@ -216,33 +241,36 @@ Negated, `toHaveError` means no error matches — no helper loop needed.
 
 ### Warnings, suggestions, and plugin diagnostics
 
-`errors` holds diagnostics with severity `error`. `diagnostics` holds everything, including suggestions such as "declared but never used" and those a language-service plugin adds:
+`errors` holds diagnostics with severity `error`. `diagnostics` holds everything, including suggestions such as "declared but never used" and those a language-service plugin adds with its own codes:
 
 ```ts
 expect(result.diagnostics).toContainEqual(expect.objectContaining({
-  code: 990001,
+  code: 6133, // 'x' is declared but its value is never read
   severity: 'suggestion',
 }))
 ```
 
 ### Quick fixes that work
 
-A diagnostic knows the fixes the editor would offer for it. `apply()` returns the fixture's files with the edits applied, ready to check again — so a test proves the fix works, not just that it is listed:
+A diagnostic knows the code fixes the editor would offer for it (`codeFixes`). Each fix's `fixedFiles` holds the fixture's files with the edits applied, ready to check again — so a test proves the fix works, not just that it is listed:
 
 ```ts
-const result = project.check({
-  'button.css.ts': 'void cls\n',
-})
-const diagnostic = result.diagnostics.find(d => d.code === 990001)!
-const fix = diagnostic.fixes.find(f => f.description === 'Add the type-only unlock import')!
+const result = project.check`
+  const fruitBasket = ['apple']
+  fruitBaskt.push('kiwi')
+`
+const [typo] = result.errors // 2552: Cannot find name 'fruitBaskt'. Did you mean 'fruitBasket'?
+const fix = typo?.codeFixes.find(f => f.description.startsWith('Change spelling'))
 
-expect(fix.edits[0]?.newText).toContain('vanity-style-auto-imports')
-expect(project.check(fix.apply()).errors).toBeClean()
+expect(fix?.edits[0]?.newText).toBe('fruitBasket')
+expect(project.check(fix!.fixedFiles).errors).toBeClean()
 ```
+
+The same works for a plugin's own diagnostics and fixes. `fixedFiles` transforms text; a fix that needs an editor command cannot be applied as text, and says so.
 
 ## 4. Guide
 
-Signature help is what the editor shows while typing arguments. `signature` is the active overload and `parameter` the active parameter, so the common reads are short:
+Signature help is what the editor shows while typing arguments. `activeSignature` is the overload in use and `activeParameter` the parameter being typed, so the common reads are short:
 
 ```ts
 const { signatureHelp } = project.query`
@@ -250,37 +278,56 @@ const { signatureHelp } = project.query`
   declare const element: HTMLElement
   setCustomProperty(element, ${cursor})
 `
-expect(signatureHelp?.activeParameter).toBe(1)
-expect(signatureHelp?.parameter?.documentation).toContain('token handle')
-expect(signatureHelp?.signature.parameters).toHaveLength(3)
+expect(signatureHelp?.activeParameterIndex).toBe(1)
+expect(signatureHelp?.activeParameter?.documentation).toContain('token handle')
+expect(signatureHelp?.activeSignature.parameters).toHaveLength(3)
 ```
 
 `signatures` lists every overload when the promise concerns them all.
+
+### Inlay hints
+
+Inlay hints guide readers of code that is already written: parameter names before arguments, inferred types after declarations. Place cursors where the hints should appear:
+
+```ts
+const result = project.query`
+  declare function pack(count: number): string
+  const label${cursor('type')} = pack(${cursor('count')}3)
+`
+expect(result.inlayHints).toContainEqual({ text: ': string', kind: 'type', range: result.rangeOf('type') })
+expect(result.inlayHints).toContainEqual({ text: 'count:', kind: 'parameter', range: result.rangeOf('count') })
+```
+
+Every kind of hint is on by default; set `includeInlay…` [preferences](./projects.md#2-tsconfig-compileroptions-preferences) to test a specific editor setup. A guard that no hint leaks internal types reads like any other:
+
+```ts
+for (const hint of result.inlayHints)
+  expect(hint.text).not.toMatch(/Internal/)
+```
 
 ## 5. Navigate
 
 Rename is a promise about identity: renaming a token at its definition or at a use site touches the same places, across files, and nothing else.
 
 ```ts
-const project = defineProject({ plugins: [renamePlugin] })
-
 const result = project.query({
-  'tokens.ts': snippet`export const tokens = defineTokens({ ${mark('definition')`brand`}: '#635bff' })`,
-  'other.ts': snippet`export const other = defineTokens({ brand: '#000' })`,
+  'tokens.ts': snippet`export const tokens = { ${mark('definition')`brand`}: '#635bff' }`,
+  'other.ts': snippet`export const other = { brand: '#000' }`,
   'consumer.ts': snippet`
     import { tokens } from './tokens'
-    void tokens.t.${mark('use')`brand`}
+    void tokens.${mark('use')`brand`}
   `,
 })
 
-const expected = [result.range('definition'), result.range('use')]
+// sorted by file, then position: consumer.ts before tokens.ts
+const expected = [result.rangeOf('use'), result.rangeOf('definition')]
 expect(result.at('definition').rename.locations).toEqual(expected)
 expect(result.at('use').rename.locations).toEqual(expected)
 ```
 
-The unrelated `brand` in `other.ts` is the negative control: equality proves it is excluded. Locations are sorted by file, then position. When rename is refused, `canRename` is `false` and `reason` carries the editor's message.
+The unrelated `brand` in `other.ts` is the negative control: equality proves it is excluded. When rename is refused, `canRename` is `false` and `reason` carries the editor's message.
 
-Plugins are the standard TypeScript language-service plugin factories; see [projects](./projects.md#plugins).
+When identity flows through types TypeScript cannot trace — keys inferred through mapped types, say — a language-service plugin can supply the missing locations. Load it with [`plugins`](./projects.md#5-plugins) and the same test proves it.
 
 ## 6. Strong evidence
 
@@ -289,16 +336,17 @@ An editor test is evidence. These habits keep it from passing for the wrong reas
 | Looks like a check | What it actually proves | State the promise instead |
 | --- | --- | --- |
 | `expect(result).not.toSuggest('internal')` alone | Nothing, if the dropdown is empty | Add `expect(result).toSuggest('public')` first |
-| `expect(item?.display).not.toMatch(/any/)` | Nothing, if `item` is missing | `expect(item).toBeDefined()` first, or `toSuggest(name)` |
+| `expect(completion?.displayText).not.toMatch(/any/)` | Nothing, if `completion` is missing | `expect(completion).toMatchObject({ kind: 'property' })` first, or `toSuggest(name)` |
+| `expect(completion?.isDeprecated).not.toBe(true)` | Nothing, if `completion` is missing | `expect(completion).toMatchObject({ isDeprecated: false })` — presence and value at once |
 | `expect(hover).toBeDefined()` | Nothing — `null` is defined | `expect(hover).not.toBeNull()` |
 | `expect(errors.length).toBeGreaterThan(0)` | Some error, any error | `toHaveError(code, message)` |
 | `toHaveError(...)` alone, for "one actionable error" | A matching error exists among others | Add `toHaveErrorCount(1)` |
 | `expect(errors).toHaveErrorCount(errors.length)` | Nothing — it compares a value with itself | A literal count |
-| A locality test comparing a diagnostic with itself | Nothing about location | `{ on: 'text' }` or `{ on: result.range('mark') }` |
-| `toHaveCompletionParity()` alone | Equality, possibly of empty sets | Also `toSuggest` one known member |
-| `expect(hover?.text).not.toMatch(LEAK)` | Mixes display and prose | Guard `hover?.display` |
+| A locality test comparing a diagnostic with itself | Nothing about location | `{ on: 'text' }` or `{ on: result.rangeOf('mark') }` |
+| `toHaveCompletionParity()` on `atEach(name)` | Equality among whichever members kept the cursor | `atEach(name, scopes)`, plus `toSuggest` one known member |
+| `expect(hover?.text).not.toMatch(LEAK)` | Mixes display and prose | Guard `hover?.displayText` |
 
 And two habits for the suite as a whole:
 
-- **Snapshot fields, not results.** `expect(hover?.display).toMatchInlineSnapshot()` pins one promise. Snapshotting a whole result pins everything the editor said, so unrelated TypeScript changes break it.
+- **Snapshot fields, not results.** `expect(hover?.displayText).toMatchInlineSnapshot()` pins one promise. Snapshotting a whole result pins everything the editor said, so unrelated TypeScript changes break it.
 - **Keep domain policy in your suite.** Your list of internal names, your documentation standard, your error-code prefix: these belong in a shared module of your tests, not in selenita.

@@ -11,59 +11,105 @@ project ──configures──▶ service
                             │                         └──▶ mark    (some text)
                             ▼
                          result ──▶ observations ──▶ completions · hover · signature help ·
-                                                     rename · diagnostics · fixes
+                                                     inlay hints · rename · diagnostics · code fixes
                                        │
                                        └── located by ranges
 ```
 
 | Term | Meaning | Not to be confused with |
 | --- | --- | --- |
-| **project** | A TypeScript environment configured like your user's editor: tsconfig, virtual files, aliases, plugins. Owns one language service. | Your repository or package. |
+| **project** | A TypeScript environment configured like your user's editor: tsconfig, preferences, virtual files, aliases, plugins. Owns one language service. | Your repository or package. |
+| **layer** | One `ProjectConfig` in a stack; later layers refine earlier ones, as tsconfig `extends` does (`defineProject(base, extra)`, `project.extend(extra)`). | — |
+| **preferences** | The editor's own settings (TypeScript's `UserPreferences`): what a typical editor sends unless you change it. | Compiler options. |
 | **fixture** | The source one query runs against: an anonymous file (template form) or named files (record form). | Disk test fixtures — though fixture files may overlay real files. |
 | **marker** | A cursor or a mark. Markers are JavaScript values interpolated into fixture source. | Comments or sentinel strings. selenita has none. |
 | **cursor** | A point between two characters, exactly like the editor's caret. Where you ask the editor a question. | A selection. A cursor has no extent. |
 | **mark** | Named fixture text, written ``mark('name')`text` ``. Locates text; observable at its start. | A cursor. Marks locate; cursors ask. |
 | **snippet** | Reusable fixture source carrying its own markers. Inert until interpolated. | A string, which carries no markers. |
-| **scope** | The dotted prefix `.for(scope)` adds to a snippet's marker names: `list.filter`. | A TypeScript scope. |
+| **scope** | The dotted prefix `.scope(name)` adds to a snippet's marker names: `list.filter`. | A TypeScript scope. |
 | **query** | Run a fixture and ask questions at its cursors. `project.query` | — |
-| **check** | Run a fixture for its diagnostics only. `project.check` | — |
+| **check** | Run a fixture for its file-wide observations, such as diagnostics. `project.check` | — |
 | **result** | What `query`/`check` return: file-wide observations plus access to each marker. | A test result. |
-| **observation** | One thing the editor reported, e.g. `completions` or `hover`. Plain, frozen, lazy. | A matcher. |
-| **completions** | The names the editor suggests at a cursor. The data noun; **suggest** is its verb. | Completion *details* (`completionItem`). |
-| **display** | TypeScript's rendering of a symbol: `(property) name: string`. Presentation, not type identity. | The symbol's type. Display is text. |
-| **documentation** | The prose attached to a symbol (TSDoc), without tags. | `display`, or the whole tooltip (`text`). |
+| **observation** | One thing the editor reported, named after the editor feature that produced it: `completions`, `hover`, `rename`. Plain, frozen, lazy. | A matcher. |
+| **completion** | One suggestion the editor offers: its name, kind, what accepting it inserts, and its details. `completions` lists them; `completionNames` lists just their names. **Suggest** is the verb. | — |
+| **inlay hint** | Text the editor draws inline in written code: `count:` before an argument, `: string` after a declaration. | Hover, which needs pointing at. |
+| **display text** | TypeScript's rendering of a symbol: `(property) name: string`. Presentation, not type identity. | The symbol's type. |
+| **documentation** | The prose attached to a symbol (TSDoc), without tags. | `displayText`, or the whole tooltip (`text`). |
 | **diagnostic** | Something the editor underlines: an error, warning, suggestion, or message. **errors** are diagnostics with severity `error`. | Exceptions. |
+| **code fix** | An edit the editor offers for a diagnostic (VS Code's "quick fix"). | — |
 | **range** | Located text: `file`, `start`, `end` (exclusive), `text`. Every location in selenita is a range. | TypeScript's `TextSpan`. |
-| **parity** | Equal completion sets for the same cursor across scopes. | Equal display or equal order. |
-| **plugin** | A TypeScript language-service plugin factory, exactly as tsserver loads it. | Vitest or bundler plugins. |
+| **parity** | Equal completion sets for the same cursor across scopes. | Equal display text or equal order. |
+| **plugin** | A TypeScript language-service plugin, given as its standard factory. selenita hosts it with less than tsserver offers, and says when a plugin needs more. | Vitest or bundler plugins. |
 | **backend** | The TypeScript implementation that produces observations (today: the TypeScript 6 API). | Your project's `typescript` version. |
 
-## 2. Naming rules
+## 2. Naming
 
-**One spelling per concept.** No aliases, no deprecated names kept alive. A renamed concept leaves no trace in code, types, or docs; the changelog owns migration.
+> **A name tells you what kind of thing it is before you look it up.**
 
-**Verbs say who owns the result:**
+Read any identifier at its call site — in a test, in a doc, in `src/` — and you should know whether it is a value, a list, a yes-or-no fact, an action, or a lookup, and roughly what it holds, without hovering. Most of selenita's rules are the familiar ones (functions start with verbs, booleans ask a question); the few exceptions follow JavaScript's own precedent and are listed, so they are predictable too.
 
-| Prefix | Meaning | Examples |
-| --- | --- | --- |
-| `create*` | Construct a resource the caller owns and disposes. | `createProject` |
-| `define*` | Declare a resource whose lifecycle a runner manages. | `defineProject` (Vitest) |
-| `to*` | A matcher. Reads as a sentence after `expect(x)`: `toSuggest`, `toHaveError`. | — |
+### 2.1 Shapes
 
-**Result accessors are short prepositions or nouns:**
+| Kind of thing | Shape | selenita examples | Reads as |
+| --- | --- | --- | --- |
+| A value | singular noun | `hover`, `message`, `range`, `activeParameter` | "the hover" |
+| A list | plural noun | `completions`, `errors`, `edits`, `locations` | "the completions" |
+| A projection of richer data | noun + what it projects | `completionNames`, `displayText`, `sortText`, `prefixText` | "the names", "the text" |
+| A position in a list, or a size | `…Index`, `…Count` | `activeParameterIndex`, `activeSignatureIndex` | "which one", "how many" |
+| A yes-or-no fact | `is…`, `has…`, `can…`, `should…` | `isDeprecated`, `isOptional`, `isRecommended`, `hasParity`, `canRename` | a question: "is it deprecated?" |
+| A yes-or-no setting | an instruction, as TypeScript names its own settings | `requireDocumentation`; TypeScript's `includeCompletionsWithInsertText`, `skipLibCheck` | a command: "require documentation" |
+| An action | verb first | `createProject`, `defineProject`, `extend`, `warmUp`, `dispose`, `inspect`, `compareCompletions`, `query`, `check` | "do this" |
+| A lookup that may find nothing | `find…`, returning `T \| undefined` (like `Array.prototype.find`) | `findCompletion` | "find it, if it is there" |
+| A lookup that must succeed | where it looks, like `array.at(i)`; throws if the name is unknown | `at(name)`, `atEach(name, scopes)`, `rangeOf(name)` | "at the cursor", "the range of the mark" |
+| A value you build fixtures from | the noun it puts in the fixture, like `html`, `css`, and `sql` tags | `cursor`, `mark`, `snippet` | "a cursor here" |
+| An observation | the editor feature it observes (TypeScript and LSP names) | `completions`, `hover`, `signatureHelp`, `inlayHints`, `rename`, `diagnostics`, `codeFixes` | "the hover" — a noun, never called |
+| A matcher | `to…`, finishing the sentence `expect(x)` starts (Vitest) | `toSuggest`, `toHaveError` | "expect x to suggest…" |
+| A type | PascalCase noun | `Range`, `Completion`, `Observations` | — |
+| A module | the noun it owns | `observations.ts`, `ranges.ts`, `parity.ts` | — |
 
-| Accessor | Reads as | Returns |
-| --- | --- | --- |
-| `result.at(name)` | observations **at** a marker | observations |
-| `result.range(name)` | the **range** of a marker | `Range` |
-| `result.across(name)` | a cursor **across** every scope | record of observations |
-| `result.raw(fn)` | **raw** TypeScript access | whatever `fn` returns |
+Two notes on the exceptions. `hover` and `rename` are also verbs, but as observations they are always read, never called — `result.hover`, `result.at('use').rename.locations` — exactly as editors and the Language Server Protocol name those features. And lookups by marker name read as places (`at`, `atEach`, `rangeOf`) because they are pure and must succeed, the same reasoning that gave JavaScript `array.at(i)`; a lookup that may come back empty says so with `find`.
 
-**Data fields are nouns; booleans are adjectives.** `deprecated`, `optional`, `canRename` (TypeScript's own word, kept for fidelity). No `is*` prefixes on data.
+The test is a sentence at the call site:
 
-**TypeScript owns TypeScript vocabulary.** When selenita exposes a TypeScript concept, it keeps TypeScript's meaning: `kind` is TypeScript's `ScriptElementKind`; `compilerOptions` use tsconfig.json spelling. selenita coins words only for its own concepts (fixture, marker, mark, scope, parity).
+```ts
+if (completion.isDeprecated) { /* … */ }
+for (const name of result.completionNames) { /* … */ }
+result.findCompletion('red-apple')?.displayText
+expect(result.atEach('root', dbs)).toHaveCompletionParity()
+const strict = project.extend({ compilerOptions: { exactOptionalPropertyTypes: true } })
+```
 
-**Marker names are paths.** `.for(scope)` joins scopes with `.`, so a name reads outside-in: `ctx.inner.field`. A cursor or mark name is one non-empty segment without `.` or whitespace; a scope is any non-empty string (an API name such as `db.findMany` is a fine scope). `across(name)` keys each entry by everything before the final segment.
+### 2.2 Verbs
+
+Each verb has one meaning, everywhere:
+
+| Verb | Means | Public | Internal |
+| --- | --- | --- | --- |
+| `create…` | Construct something new; the caller owns it | `createProject` | `createRange`, `createFixture` |
+| `define…` | Declare something a runner manages | `defineProject` | — |
+| `extend` | Derive a new one with more configuration layers, like tsconfig `extends`; never changes the original | `project.extend` | — |
+| `find…` | Look something up; `undefined` when absent | `findCompletion` | `findMarker` |
+| `require…` | Look something up; throw a `SelenitaError` when absent | — | `requireMarker` |
+| `compare…` | Judge things against each other; return the judgment as data | `compareCompletions` | — |
+| `inspect` | Run code against the raw TypeScript service, with a result's fixture active | `result.inspect` | — |
+| `warmUp` / `dispose` | Prepare / release a resource | `project.warmUp`, `project.dispose` | — |
+| `resolve…` | Turn something partial into its complete form: a path, a config, a module | `resolvePath` | `resolveConfig`, `resolveModule` |
+| `collect…` | Request something from TypeScript and map it to public shapes | — | `collectCompletions`, `collectDiagnostics` |
+| `merge…` | Combine configuration layers | — | `mergeLayers` |
+| `activate` | Make a fixture the one the service sees | — | `activateFixture` |
+| `apply…` | Produce new text from edits | — | `applyEdits` |
+| `parse…` / `format…` | Text into structure / structure into text | — | `parseTemplate`, `formatExcerpt` |
+| `validate…` | Throw a `SelenitaError` on invalid input | — | `validateConfig` |
+
+A new verb is fine when none of these fits; add it here with its one meaning. Phrasal verbs capitalize both words (`warmUp`, not `warmup`, which is the noun).
+
+### 2.3 Words
+
+- **One spelling per concept.** No aliases, no deprecated names kept alive. A renamed concept leaves no trace in code, types, or docs; the changelog owns migration.
+- **TypeScript owns TypeScript's words.** When selenita exposes a TypeScript concept, it keeps TypeScript's name and meaning: `codeFixes`, `codeActions`, `relatedInformation`, `insertText`, `sortText`, `prefixText`, `canRename`, `kind`, `compilerOptions` in tsconfig.json spelling, `preferences` as `UserPreferences`.
+- **selenita coins words only for its own concepts:** fixture, marker, cursor, mark, snippet, scope, layer, observation, parity.
+- **No abbreviations** beyond those the ecosystem spells that way (`config`, `tsconfig`, `ts`).
+- **Marker names are paths.** `.scope(name)` joins scopes with `.`, so a name reads outside-in: `ctx.inner.field`. A cursor or mark name is one non-empty segment without `.` or whitespace; a scope is any non-empty string (an API name such as `db.findMany` is a fine scope). `atEach(name)` keys each entry by everything before the final segment.
 
 ## 3. Error messages
 

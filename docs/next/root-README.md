@@ -34,14 +34,14 @@ No line or column arithmetic, no magic comments, no DSL. The fixture is real Typ
 ## Highlights
 
 - **✍️ Write the example, not the harness** — cursors and marks are values in real source. `defineProject()` finds your tsconfig.
-- **🎯 Every editor promise** — completions, hovers (shape and docs, separately), diagnostics with exact locations, signature help, rename, and quick fixes you can apply and re-check.
-- **🧩 Composable fixtures** — snippets carry their own markers, scopes keep names unique, arrays fan out, records span several files.
+- **🎯 Every editor promise** — completions and what accepting them inserts, hovers (shape and docs, separately), diagnostics with exact locations, signature help, inlay hints, rename, and quick fixes you can apply and re-check.
+- **🧩 Composable** — snippets carry their own markers, scopes keep names unique, arrays fan out, records span several files, and project configs stack in layers.
 - **🔤 IntelliSense for your tests** — marker names autocomplete in `result.at('…')`, and typos are type errors.
 - **🧾 Trustworthy evidence** — a failed observation is an error, never an empty list. Displays and resolution are TypeScript's own.
 - **⚡ Pay for what you read** — observations are computed on first access.
 - **🔍 Failures that explain** — every failure shows the fixture line, the marker, and what the editor actually said.
-- **🔌 Plugins** — test TypeScript language-service plugins exactly as tsserver loads them.
-- **🧰 Works with TypeScript 6 and 7** — selenita brings the language-service API it needs.
+- **🔌 Plugins** — load TypeScript language-service plugins from their standard factories, and test what they add.
+- **🧰 Installs alongside TypeScript 6 or 7** — selenita brings the TypeScript 6 language service it observes with.
 
 ## Install
 
