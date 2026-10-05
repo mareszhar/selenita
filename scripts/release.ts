@@ -38,9 +38,10 @@ try {
   runCommand('bun', ['install', '--lockfile-only', '--ignore-scripts'])
   const { version } = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as { version: string }
   // verify already ran; disable lifecycle scripts to avoid a second recursive gate.
-  console.log(runCommand('npm', ['publish', '--access', 'public', '--ignore-scripts']))
+  // npm only handles browser/2FA challenges when both stdin and stdout are terminals.
+  execFileSync('npm', ['publish', '--access', 'public', '--ignore-scripts'], { cwd: root, stdio: 'inherit' })
   hasPublished = true
-  console.log(`Published v${version}. Finish after reviewing the version files:\ngit add ${versionFiles.filter(file => existsSync(resolve(root, file))).join(' ')}\ngit commit -m '🔖 release v${version}'\ngit tag v${version}\ngit push --follow-tags`)
+  console.log(`Published v${version}. Finish after reviewing the version files:\ngit add ${versionFiles.filter(file => existsSync(resolve(root, file))).join(' ')}\ngit commit -m '🔖 release v${version}'\ngit tag -a v${version} -m 'selenita v${version}'\ngit push --follow-tags`)
 }
 catch (error) {
   if (snapshot && !hasPublished)
