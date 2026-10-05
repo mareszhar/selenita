@@ -1,26 +1,40 @@
-export { cursor } from './cursor'
-export type { Cursor, CursorValue } from './cursor'
-
-export { group } from './group'
-export type { GroupValue } from './group'
-
-export { defineProject } from './project'
-export type { DefineProjectConfig, ModeConfig, ModesMap } from './project'
-
-export { snippet } from './snippet'
-export type { ScopedSnippet, SnippetValue } from './snippet'
+export { SelenitaError } from './errors'
+export { cursor, mark, snippet } from './markers'
+export type { Cursor, Mark, Snippet } from './markers'
+export { compareCompletions } from './parity'
+export { createProject } from './project'
 
 export type {
   CheckResult,
-  CompletionItem,
-  CompletionItemKind,
+  CheckTag,
+  CodeAction,
+  CodeFix,
+  CompilerOptionsJson,
+  Completion,
+  CompletionComparison,
+  CompletionKind,
   Diagnostic,
-  DivergenceReport,
-  GroupAnalysis,
-  GroupCursorResult,
-  GroupQueryResult,
+  DocTag,
+  Files,
+  Hover,
   InlayHint,
+  InspectionContext,
+  Interpolation,
+  JsonValue,
+  Observations,
+  Parameter,
+  Plugin,
+  PluginEntry,
+  Point,
+  Project,
+  ProjectConfig,
   QueryResult,
+  QueryTag,
+  Range,
+  RelatedInformation,
+  Rename,
+  RenameLocation,
+  Signature,
   SignatureHelp,
-  SingleCursorResult,
+  TextEdit,
 } from './types'

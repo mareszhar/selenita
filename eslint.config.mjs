@@ -18,6 +18,30 @@ export default antfu({
     'jsdoc/empty-tags': 'off',
   },
 }, {
+  files: ['**/*.ts'],
+  ignores: ['src/typescript.ts'],
+  rules: {
+    'no-restricted-imports': ['error', {
+      paths: [
+        { name: 'typescript', allowTypeImports: true, message: 'Import the bundled backend through ./typescript.' },
+        { name: '@typescript/typescript6', allowTypeImports: true, message: 'Import the bundled backend through ./typescript.' },
+      ],
+    }],
+  },
+}, {
+  files: ['src/**/*.ts'],
+  languageOptions: { parserOptions: { project: './tsconfig.json', tsconfigRootDir: import.meta.dirname } },
+  rules: {
+    'ts/naming-convention': ['error', {
+      selector: ['variable', 'parameter', 'classProperty', 'typeProperty'],
+      types: ['boolean'],
+      format: ['PascalCase'],
+      prefix: ['is', 'has', 'can', 'should'],
+      // Vitest owns pass; requireDocumentation is the documented instruction setting.
+      filter: { regex: '^(pass|requireDocumentation)$', match: false },
+    }],
+  },
+}, {
   files: ['**/*.md'],
   rules: {
     'format/prettier': 'off',

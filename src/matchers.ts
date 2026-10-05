@@ -1,376 +1,136 @@
-import type { CompletionItem, CompletionItemKind, Diagnostic, GroupCursorResult, SignatureHelp } from './types'
-import * as fs from 'node:fs'
-import * as path from 'node:path'
-import process from 'node:process'
+import type { Fixture, FixtureMarker } from './fixture'
+import type { CompletionReceiver } from './parity'
+import type { Completion, Diagnostic, Range } from './types'
+import { resolve } from 'node:path'
+import { SelenitaError } from './errors'
+import { compareCompletions, requireCompletionNames } from './parity'
+import { createRange, fixtureReference, formatExcerpt, markerReference } from './ranges'
 
-// ── Type-snapshot helpers ───────────────────────────────────────────────────
+interface MatcherContext { isNot: boolean }
+interface MatcherJudgment { pass: boolean, message: () => string }
+export interface SuggestOptions { requireDocumentation?: boolean }
+export interface ErrorOptions { on?: string | Range }
+interface LocatedReceiver { [fixtureReference]?: Fixture, [markerReference]?: FixtureMarker }
 
-const SNAPSHOT_DIR = '__type_snapshots__'
-const SNAPSHOT_EXT = '.type-snapshot'
-
-/**
- * Derive the absolute path to the snapshot file for the given test file.
- * e.g. /project/tests/api.test.ts → /project/tests/__type_snapshots__/api.test.type-snapshot
- */
-function snapshotFilePath(testFilePath: string): string {
-  const dir = path.dirname(testFilePath)
-  const base = path.basename(testFilePath)
-  return path.join(dir, SNAPSHOT_DIR, base + SNAPSHOT_EXT)
-}
-
-/** Extract the calling test file path from a stack trace. */
-function callerTestFile(stackOffset = 4): string | undefined {
-  const err = new Error('stack capture')
-  const lines = (err.stack ?? '').split('\n').slice(stackOffset)
-  for (const line of lines) {
-    // Match absolute paths ending in a test-file extension
-    const m = line.match(/\((.+\.(test|spec)\.[cm]?[tj]sx?):\d+:\d+\)/)
-      ?? line.match(/at (.+\.(test|spec)\.[cm]?[tj]sx?):\d+:\d+/)
-    if (m?.[1])
-      return m[1]
+function requireNames(received: unknown): readonly string[] {
+  if (Array.isArray(received) && received.every(value => typeof value === 'string' || (value && typeof value.name === 'string')))
+    return requireCompletionNames(received)
+  if (received && typeof received === 'object' && 'completionNames' in received) {
+    const names = received.completionNames
+    if (Array.isArray(names) && names.every(name => typeof name === 'string'))
+      return names
   }
-  return undefined
+  throw new SelenitaError(`suggest matcher received ${typeof received}; expects observations, completion objects, or name arrays\n  hint: pass result.at(name), result.completions, or result.completionNames`)
+}
+function requireCompletions(received: unknown): readonly Completion[] {
+  const completions = received && typeof received === 'object' && 'completions' in received ? received.completions : received
+  if (Array.isArray(completions) && completions.every(value => value && typeof value.name === 'string' && 'documentation' in value))
+    return completions
+  throw new SelenitaError('requireDocumentation expects completion objects\n  hint: pass observations or completions instead of completionNames')
+}
+function requireErrors(received: unknown): readonly Diagnostic[] {
+  const diagnostics = received && typeof received === 'object' && 'errors' in received ? received.errors : received
+  if (Array.isArray(diagnostics) && diagnostics.every(value => value && typeof value.code === 'number' && typeof value.message === 'string' && typeof value.severity === 'string'))
+    return diagnostics.filter(value => value.severity === 'error')
+  throw new SelenitaError(`report matcher received ${typeof received}; expects a result or diagnostic array\n  hint: pass result, result.errors, or result.diagnostics`)
+}
+function formatNames(names: readonly string[]): string {
+  return names.slice(0, 20).join(', ') + (names.length > 20 ? ` (${names.length - 20} more)` : '')
+}
+function formatLocation(received: unknown): { label: string, excerpt: string } {
+  const located = received as LocatedReceiver | null
+  const fixture = located?.[fixtureReference]
+  const marker = located?.[markerReference]
+  if (!fixture || !marker)
+    return { label: 'cursor', excerpt: '' }
+  const range = createRange(fixture.root, marker.file, fixture.files.get(marker.file)!.text, marker.start, marker.end - marker.start, fixture)
+  return { label: `${marker.kind}${marker.name ? ` '${marker.name}'` : ''}`, excerpt: `\n${formatExcerpt(range)}` }
+}
+function formatErrors(errors: readonly Diagnostic[]): string {
+  return errors.map(error => `  [${error.code}] ${error.message}${error.range ? `\n${formatExcerpt(error.range)}` : ''}`).join('\n') || '  errors: none'
 }
 
-type SnapshotMap = Record<string, string>
-
-function readSnapshotFile(filePath: string): SnapshotMap {
-  if (!fs.existsSync(filePath))
-    return {}
-  const raw = fs.readFileSync(filePath, 'utf-8')
-  try {
-    return JSON.parse(raw) as SnapshotMap
-  }
-  catch {
-    throw new Error(
-      `selenita toMatchTypeSnapshot: snapshot file is not valid JSON.\n`
-      + `File: ${filePath}\n`
-      + `Run with vitest --update (-u) to regenerate it.`,
-    )
-  }
+export function toSuggest(received: unknown, expected: string | readonly string[], options: SuggestOptions | undefined, context: MatcherContext): MatcherJudgment {
+  if (options?.requireDocumentation && context.isNot)
+    throw new SelenitaError('requireDocumentation cannot be negated\n  hint: check documentation positively, or negate toSuggest without this option')
+  const requestedNames = typeof expected === 'string' ? [expected] : expected
+  const names = requireNames(received)
+  const missingNames = requestedNames.filter(name => !names.includes(name))
+  const presentNames = requestedNames.filter(name => names.includes(name))
+  const undocumentedNames = options?.requireDocumentation
+    ? [...new Set(requireCompletions(received).filter(completion => requestedNames.includes(completion.name) && !completion.documentation.trim()).map(completion => completion.name))]
+    : []
+  const location = formatLocation(received)
+  const message = `expected ${location.label} to suggest ${context.isNot ? 'none of' : 'all of'} ${formatNames(requestedNames)}${location.excerpt}${
+    context.isNot ? `\n  suggested anyway: ${formatNames(presentNames)}` : `${missingNames.length ? `\n  missing: ${formatNames(missingNames)}` : ''}${undocumentedNames.length ? `\n  undocumented: ${formatNames(undocumentedNames)}` : ''}`
+  }\n  suggested (${names.length}): ${formatNames(names)}`
+  return { pass: context.isNot ? presentNames.length > 0 : missingNames.length === 0 && undocumentedNames.length === 0, message: () => message }
 }
-
-function writeSnapshotFile(filePath: string, data: SnapshotMap): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true })
-  fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, 'utf-8')
+export function toSuggestOnly(received: unknown, expected: readonly string[], context: MatcherContext): MatcherJudgment {
+  const names = [...new Set(requireNames(received))]
+  const requestedNames = [...new Set(expected)]
+  const missingNames = requestedNames.filter(name => !names.includes(name))
+  const unexpectedNames = names.filter(name => !requestedNames.includes(name))
+  const location = formatLocation(received)
+  const message = `expected ${location.label} ${context.isNot ? 'not ' : ''}to suggest exactly ${formatNames(requestedNames)}${location.excerpt}\n  missing: ${formatNames(missingNames)}\n  unexpected: ${formatNames(unexpectedNames)}`
+  return { pass: missingNames.length === 0 && unexpectedNames.length === 0, message: () => message }
 }
-
-function serializeForSnapshot(value: unknown): string {
-  const result = JSON.stringify(value, null, 2)
-  if (result === undefined) {
-    throw new Error(
-      `selenita toMatchTypeSnapshot: received value cannot be serialized to JSON (got ${typeof value}).\n`
-      + `Only JSON-serializable values (objects, arrays, strings, numbers, booleans, null) are supported.`,
-    )
-  }
-  return result
+export function toHaveCompletionParity(received: unknown, context: MatcherContext): MatcherJudgment {
+  if (!received || typeof received !== 'object' || Array.isArray(received))
+    throw new SelenitaError('parity matcher expects a record of observations or completion arrays\n  hint: pass result.atEach(name, scopes)')
+  const members = Object.entries(received)
+  const comparison = compareCompletions(received as Record<string, CompletionReceiver>)
+  const baselineMembers = Object.keys(received).filter(name => !Object.hasOwn(comparison.differences, name))
+  const location = formatLocation(members[0]![1])
+  const message = `expected ${context.isNot ? 'different completion sets' : 'completion parity'} across ${members.length} members at ${location.label}${location.excerpt}\n  baseline (${baselineMembers.join(', ')}): ${formatNames(comparison.baseline)}\n${
+    Object.entries(comparison.differences).map(([name, difference]) => `  ${name}:${difference.added.length ? ` +${formatNames(difference.added)}` : ''}${difference.removed.length ? `  -${formatNames(difference.removed)}` : ''}`).join('\n')}`
+  return { pass: comparison.hasParity, message: () => message }
 }
-
-function isUpdateMode(): boolean {
-  // Vitest: `--update` / `-u` flag sets updateSnapshot='all' in the worker config.
-  // `VITEST_UPDATE_SNAPSHOT=all` is also accepted as an explicit manual override.
-  if (process.env.VITEST_UPDATE_SNAPSHOT === 'all')
+export function toBeClean(received: unknown, context: MatcherContext): MatcherJudgment {
+  const errors = requireErrors(received)
+  const message = `expected ${context.isNot ? 'at least one error' : 'no errors'}\n${formatErrors(errors)}`
+  return { pass: errors.length === 0, message: () => message }
+}
+export function toHaveErrorCount(received: unknown, expected: number, context: MatcherContext): MatcherJudgment {
+  const errors = requireErrors(received)
+  const message = `expected ${context.isNot ? 'not ' : ''}${expected} errors, received ${errors.length}\n${formatErrors(errors)}`
+  return { pass: errors.length === expected, message: () => message }
+}
+function compareMessage(message: string, pattern: string | RegExp | undefined): boolean {
+  return pattern === undefined || (typeof pattern === 'string' ? message.includes(pattern) : new RegExp(pattern.source, pattern.flags).test(message))
+}
+function compareRange(range: Range | null, expected: string | Range | undefined): boolean {
+  if (expected === undefined)
     return true
-  const vitestWorker = (globalThis as {
-    __vitest_worker__?: { config?: { snapshotOptions?: { updateSnapshot?: string } } }
-  }).__vitest_worker__
-  if (vitestWorker?.config?.snapshotOptions?.updateSnapshot === 'all')
-    return true
-  return false
+  if (!range)
+    return false
+  if (typeof expected === 'string')
+    return range.text === expected
+  return range.file === expected.file && (['start', 'end'] as const).every(point => (['line', 'column', 'offset'] as const).every(key => range[point][key] === expected[point][key]))
 }
-
-function snapshotUpdateHint(): string {
-  return 'Run with vitest --update (or -u) to update.'
-}
-
-// ── Matcher builder ─────────────────────────────────────────────────────────
-
-/**
- * Build the selenita custom matcher set.
- * Returns an object suitable for `expect.extend(...)`.
- */
-
-export function buildMatchers() {
-  return {
-    // ── Completion matchers ─────────────────────────────────────────────────
-
-    toContainCompletion(this: unknown, received: string[], expected: string) {
-      const pass = received.includes(expected)
-      return {
-        pass,
-        message: () =>
-          pass
-            ? `Expected completions not to contain '${expected}', but it did.\nCompletions: ${JSON.stringify(received)}`
-            : `Expected completions to contain '${expected}'.\nCompletions: ${JSON.stringify(received)}`,
-      }
-    },
-
-    toContainCompletions(this: unknown, received: string[], expected: string[]) {
-      const missing = expected.filter(e => !received.includes(e))
-      const pass = missing.length === 0
-      return {
-        pass,
-        message: () =>
-          pass
-            ? `Expected completions not to contain all of ${JSON.stringify(expected)}, but they did.`
-            : `Expected completions to contain ${JSON.stringify(missing)}.\nCompletions: ${JSON.stringify(received)}`,
-      }
-    },
-
-    toEqualCompletions(this: unknown, received: string[], expected: string[]) {
-      const sortedReceived = [...received].sort()
-      const sortedExpected = [...expected].sort()
-      const pass = JSON.stringify(sortedReceived) === JSON.stringify(sortedExpected)
-      return {
-        pass,
-        message: () =>
-          pass
-            ? `Expected completions not to equal ${JSON.stringify(sortedExpected)} (order-insensitive).`
-            : `Expected completions to equal ${JSON.stringify(sortedExpected)} (order-insensitive).\nReceived: ${JSON.stringify(sortedReceived)}`,
-      }
-    },
-
-    // ── CompletionItem matchers ─────────────────────────────────────────────
-
-    toHaveKind(this: unknown, received: CompletionItem | undefined, expected: CompletionItemKind) {
-      if (!received) {
-        return {
-          pass: false,
-          message: () => `Expected a CompletionItem but got undefined.`,
-        }
-      }
-      const pass = received.kind === expected
-      return {
-        pass,
-        message: () =>
-          pass
-            ? `Expected CompletionItem '${received.name}' not to have kind '${expected}'.`
-            : `Expected CompletionItem '${received.name}' to have kind '${expected}', but got '${received.kind}'.`,
-      }
-    },
-
-    toHaveType(this: unknown, received: CompletionItem | undefined, expected: string) {
-      if (!received) {
-        return {
-          pass: false,
-          message: () => `Expected a CompletionItem but got undefined.`,
-        }
-      }
-      const pass = received.type.includes(expected)
-      return {
-        pass,
-        message: () =>
-          pass
-            ? `Expected CompletionItem '${received.name}' type not to include '${expected}'.`
-            : `Expected CompletionItem '${received.name}' type to include '${expected}'.\nType: ${received.type}`,
-      }
-    },
-
-    toHaveDocumentation(this: unknown, received: CompletionItem | undefined, expected: string | RegExp) {
-      if (!received) {
-        return {
-          pass: false,
-          message: () => `Expected a CompletionItem but got undefined.`,
-        }
-      }
-      const pass
-        = typeof expected === 'string'
-          ? received.documentation.includes(expected)
-          : expected.test(received.documentation)
-      return {
-        pass,
-        message: () =>
-          pass
-            ? `Expected documentation not to match ${String(expected)}.`
-            : `Expected documentation to match ${String(expected)}.\nDocumentation: ${received.documentation}`,
-      }
-    },
-
-    toBeDeprecated(this: unknown, received: CompletionItem | undefined) {
-      if (!received) {
-        return {
-          pass: false,
-          message: () => `Expected a CompletionItem but got undefined.`,
-        }
-      }
-      return {
-        pass: received.isDeprecated,
-        message: () =>
-          received.isDeprecated
-            ? `Expected CompletionItem '${received.name}' not to be deprecated.`
-            : `Expected CompletionItem '${received.name}' to be deprecated.`,
-      }
-    },
-
-    // ── Diagnostic matchers ─────────────────────────────────────────────────
-
-    toBeClean(this: unknown, received: Diagnostic[]) {
-      const errors = received.filter(d => d.severity === 'error')
-      const pass = errors.length === 0
-      return {
-        pass,
-        message: () =>
-          pass
-            ? `Expected errors not to be clean, but there were none.`
-            : `Expected no errors, but got:\n${errors.map(d => `  [${d.code}] ${d.message}`).join('\n')}`,
-      }
-    },
-
-    toHaveError(
-      this: unknown,
-      received: Diagnostic[],
-      codeOrMessage: number | RegExp,
-      message?: RegExp,
-    ) {
-      const errors = received.filter(d => d.severity === 'error')
-      const matchesCode = (d: Diagnostic) =>
-        typeof codeOrMessage === 'number' ? d.code === codeOrMessage : true
-      const matchesMessage = (d: Diagnostic) => {
-        if (typeof codeOrMessage === 'object')
-          return codeOrMessage.test(d.message)
-        if (message)
-          return message.test(d.message)
-        return true
-      }
-      const pass = errors.some(d => matchesCode(d) && matchesMessage(d))
-      return {
-        pass,
-        message: () => {
-          const desc
-            = typeof codeOrMessage === 'number'
-              ? message
-                ? `code ${codeOrMessage} matching ${message}`
-                : `code ${codeOrMessage}`
-              : `message matching ${codeOrMessage}`
-          return pass
-            ? `Expected errors not to have error with ${desc}.`
-            : `Expected errors to have error with ${desc}.\nErrors:\n${errors.map(d => `  [${d.code}] ${d.message}`).join('\n')}`
-        },
-      }
-    },
-
-    toHaveErrorCount(this: unknown, received: Diagnostic[], expected: number) {
-      const errors = received.filter(d => d.severity === 'error')
-      const pass = errors.length === expected
-      return {
-        pass,
-        message: () =>
-          pass
-            ? `Expected not to have exactly ${expected} error(s).`
-            : `Expected ${expected} error(s), but got ${errors.length}.\nErrors:\n${errors.map(d => `  [${d.code}] ${d.message}`).join('\n')}`,
-      }
-    },
-
-    // ── Parity matcher ──────────────────────────────────────────────────────
-
-    toHaveCompletionParity(this: unknown, received: GroupCursorResult) {
-      const pass = received.hasParity
-      return {
-        pass,
-        message: () => {
-          const groupTag = received.label ? ` (group: ${received.label})` : ''
-          if (pass)
-            return `Expected group cursor result${groupTag} not to have completion parity.`
-
-          const { divergence } = received
-          if (!divergence)
-            return `No divergence data available.`
-
-          const lines = [`Expected all group members to have identical completions${groupTag}.\nBaseline: ${JSON.stringify(divergence.baseline)}`]
-          for (const [api, diff] of Object.entries(divergence.members)) {
-            if (diff.added.length || diff.removed.length) {
-              lines.push(
-                `  ${api}:${diff.added.length ? ` +[${diff.added.join(', ')}]` : ''}${diff.removed.length ? ` -[${diff.removed.join(', ')}]` : ''}`,
-              )
-            }
-          }
-          return lines.join('\n')
-        },
-      }
-    },
-
-    // ── Signature help matchers ─────────────────────────────────────────────
-
-    toBeActiveOnParameter(this: unknown, received: SignatureHelp | null, expected: number) {
-      if (!received) {
-        return {
-          pass: false,
-          message: () => `Expected SignatureHelp to be present but got null.`,
-        }
-      }
-      const pass = received.activeParameter === expected
-      return {
-        pass,
-        message: () =>
-          pass
-            ? `Expected active parameter not to be ${expected}.`
-            : `Expected active parameter to be ${expected}, but got ${received.activeParameter}.`,
-      }
-    },
-
-    toHaveParameterCount(this: unknown, received: SignatureHelp | null, expected: number) {
-      if (!received) {
-        return {
-          pass: false,
-          message: () => `Expected SignatureHelp to be present but got null.`,
-        }
-      }
-      const activeSignature = received.signatures[received.activeSignature]
-      const count = activeSignature?.parameters.length ?? 0
-      const pass = count === expected
-      return {
-        pass,
-        message: () =>
-          pass
-            ? `Expected signature not to have ${expected} parameter(s).`
-            : `Expected signature to have ${expected} parameter(s), but got ${count}.`,
-      }
-    },
-
-    // ── Type snapshots ──────────────────────────────────────────────────────
-
-    /**
-     * Assert that the received value matches a stored type snapshot.
-     *
-     * Snapshots are stored in `__type_snapshots__/<test-file>.type-snapshot`
-     * adjacent to the test file. Pass an optional `name` to disambiguate
-     * multiple calls in the same test.
-     *
-     * Update snapshots: run with `vitest --update` (or `-u`), or set `VITEST_UPDATE_SNAPSHOT=all`.
-     */
-    toMatchTypeSnapshot(this: { currentTestName?: string }, received: unknown, name?: string) {
-      const serialized = serializeForSnapshot(received)
-      const testFile = callerTestFile()
-
-      if (!testFile) {
-        return {
-          pass: false,
-          message: () =>
-            `selenita toMatchTypeSnapshot: could not determine test file path from the stack trace.\n`
-            + `Ensure this matcher is called from within a .test.ts or .spec.ts file.`,
-        }
-      }
-
-      const snapshotKey = [this.currentTestName, name].filter(Boolean).join(' > ') || 'default'
-      const snapshotPath = snapshotFilePath(testFile)
-      const snapshots = readSnapshotFile(snapshotPath)
-
-      if (isUpdateMode() || !(snapshotKey in snapshots)) {
-        snapshots[snapshotKey] = serialized
-        writeSnapshotFile(snapshotPath, snapshots)
-        return { pass: true, message: () => '' }
-      }
-
-      const stored = snapshots[snapshotKey] ?? ''
-      const pass = serialized === stored
-
-      return {
-        pass,
-        message: () =>
-          pass
-            ? `Expected type snapshot not to match '${snapshotKey}'.`
-            : `Type snapshot mismatch for '${snapshotKey}'.\nExpected:\n${stored}\n\nReceived:\n${serialized}\n\n${snapshotUpdateHint()}`,
-      }
-    },
+function formatNearMiss(actual: Range, expected: string | Range): string {
+  const fixture = (actual as Range & LocatedReceiver)[fixtureReference]
+  let range = typeof expected === 'string' ? undefined : expected
+  if (fixture) {
+    const file = resolve(fixture.root, typeof expected === 'string' ? actual.file : expected.file)
+    const text = fixture.files.get(file)?.text
+    if (text !== undefined) {
+      const offset = typeof expected === 'string' ? text.indexOf(expected, Math.max(0, actual.start.offset - expected.length)) : expected.start.offset
+      if (offset >= 0)
+        range = createRange(fixture.root, file, text, offset, typeof expected === 'string' ? expected.length : expected.end.offset - offset, fixture)
+    }
   }
+  return `\n  expected underline${range ? `\n${formatExcerpt(range)}` : `: '${expected}'`}\n  actual underline\n${formatExcerpt(actual)}`
+}
+export function toHaveError(received: unknown, criterion: number | string | RegExp, messageOrOptions: string | RegExp | ErrorOptions | undefined, options: ErrorOptions | undefined, context: MatcherContext): MatcherJudgment {
+  const errors = requireErrors(received)
+  const code = typeof criterion === 'number' ? criterion : undefined
+  const pattern = code === undefined ? criterion as string | RegExp : typeof messageOrOptions === 'string' || messageOrOptions instanceof RegExp ? messageOrOptions : undefined
+  const location = messageOrOptions && typeof messageOrOptions === 'object' && !(messageOrOptions instanceof RegExp) ? messageOrOptions.on : options?.on
+  const nearMatches = errors.filter(error => (code === undefined || code === error.code) && compareMessage(error.message, pattern))
+  const hasMatch = nearMatches.some(error => compareRange(error.range, location))
+  const nearMiss = !hasMatch && location !== undefined ? nearMatches.find(error => error.range) : undefined
+  const message = `expected ${context.isNot ? 'no ' : ''}error ${code ?? ''}${pattern === undefined ? '' : ` matching ${String(pattern)}`}${location === undefined ? '' : ` on '${typeof location === 'string' ? location : location.text}'`}${
+    nearMiss?.range ? formatNearMiss(nearMiss.range, location!) : ''}\n${formatErrors(errors)}`
+  return { pass: hasMatch, message: () => message }
 }

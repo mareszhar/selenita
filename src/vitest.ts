@@ -1,78 +1,62 @@
-import type { CompletionItem, CompletionItemKind, Diagnostic, GroupCursorResult, SignatureHelp } from './types'
-/**
- * selenita/vitest — custom matchers for Vitest.
- *
- * Add to your Vitest setup file:
- *   import '@mszr/selenita/vitest'
- *
- * Then in vitest.config.ts:
- *   test: { setupFiles: ['./vitest.setup.ts'] }
- */
-import { expect } from 'vitest'
-import { buildMatchers } from './matchers'
+import type { ErrorOptions, SuggestOptions } from './matchers'
+import type { Project, ProjectConfig } from './types'
+import { afterAll, beforeAll, expect } from 'vitest'
+import { SelenitaError } from './errors'
+import * as matchers from './matchers'
+import { createProject } from './project'
 
-expect.extend(buildMatchers())
+expect.extend({
+  toSuggest(received, names: string | readonly string[], options?: SuggestOptions) {
+    return matchers.toSuggest(received, names, options, { isNot: this.isNot })
+  },
+  toSuggestOnly(received, names: readonly string[]) {
+    return matchers.toSuggestOnly(received, names, { isNot: this.isNot })
+  },
+  toHaveCompletionParity(received) {
+    return matchers.toHaveCompletionParity(received, { isNot: this.isNot })
+  },
+  toBeClean(received) {
+    return matchers.toBeClean(received, { isNot: this.isNot })
+  },
+  toHaveError(received, criterion: number | string | RegExp, messageOrOptions?: string | RegExp | ErrorOptions, options?: ErrorOptions) {
+    return matchers.toHaveError(received, criterion, messageOrOptions, options, { isNot: this.isNot })
+  },
+  toHaveErrorCount(received, count: number) {
+    return matchers.toHaveErrorCount(received, count, { isNot: this.isNot })
+  },
+})
 
-// ── Vitest type augmentation ────────────────────────────────────────────────
-// Augmenting Vitest's `Matchers` extension point means importing
-// `@mszr/selenita/vitest` types `expect.extend`, `expect(value).*`, and
-// `expect.*` on Vitest 4. Extending `Assertion` as well keeps older Vitest
-// versions in the peer range typed.
-
-interface SelenitaVitestMatchers {
-  // Completions
-  toContainCompletion: (name: string) => void
-  toContainCompletions: (names: string[]) => void
-  /** Order-insensitive exact match on `completions`. */
-  toEqualCompletions: (names: string[]) => void
-
-  // CompletionItem
-  toHaveKind: (kind: CompletionItemKind) => void
-  toHaveType: (type: string) => void
-  toHaveDocumentation: (doc: string | RegExp) => void
-  toBeDeprecated: () => void
-
-  // Diagnostics
-  toBeClean: () => void
-  toHaveError: ((code: number, message?: RegExp) => void) & ((message: RegExp) => void)
-  toHaveErrorCount: (count: number) => void
-
-  // Parity
-  /** Assert that all group members expose identical completions (order-insensitive). */
-  toHaveCompletionParity: () => void
-
-  // Signature help
-  toBeActiveOnParameter: (index: number) => void
-  toHaveParameterCount: (count: number) => void
-
-  // Type snapshots
-  /** Store or compare a type-level snapshot in `__type_snapshots__/`. */
-  toMatchTypeSnapshot: (name?: string) => void
-}
-
-type SelenitaVitestAsymmetricMatchers = {
-  [K in keyof Omit<SelenitaVitestMatchers, 'toHaveError'>]: SelenitaVitestMatchers[K] extends (...args: infer A) => any
-    ? (...args: A) => any
-    : never
-} & {
-  toHaveError: ((code: number, message?: RegExp) => any) & ((message: RegExp) => any)
+interface SelenitaVitestMatchers<R> {
+  /** Every name is suggested; negated, none is suggested. Optionally require non-blank documentation. */
+  toSuggest: (names: string | readonly string[], options?: SuggestOptions) => R
+  /** Suggested names equal these names as a set, ignoring order and duplicates. */
+  toSuggestOnly: (names: readonly string[]) => R
+  /** At least two members suggest the same set; differences are reported against a majority baseline. */
+  toHaveCompletionParity: () => R
+  /** No diagnostic has error severity. Warnings and suggestions do not count. */
+  toBeClean: () => R
+  /** Some error matches every criterion, including its exact underline when on is supplied. */
+  toHaveError: {
+    (code: number, options?: ErrorOptions): R
+    (message: string | RegExp, options?: ErrorOptions): R
+    (code: number, message: string | RegExp, options?: ErrorOptions): R
+  }
+  /** Exactly this many diagnostics have error severity. */
+  toHaveErrorCount: (count: number) => R
 }
 
 declare module 'vitest' {
   // eslint-disable-next-line unused-imports/no-unused-vars
-  interface Matchers<T = any> extends SelenitaVitestMatchers {}
-
-  // eslint-disable-next-line unused-imports/no-unused-vars
-  interface Assertion<T = any> extends SelenitaVitestMatchers {}
-
-  interface AsymmetricMatchersContaining extends SelenitaVitestAsymmetricMatchers {}
+  interface Matchers<R extends void | Promise<void> = void | Promise<void>, T = unknown> extends SelenitaVitestMatchers<R> {}
 }
+export * from './index'
 
-// Re-export types so consumers of /vitest don't need a separate import
-export type {
-  CompletionItem,
-  CompletionItemKind,
-  Diagnostic,
-  GroupCursorResult,
-  SignatureHelp,
+/** Declare a project whose warm-up and disposal belong to this Vitest scope. */
+export function defineProject(...configs: ProjectConfig[]): Project {
+  if (expect.getState().currentTestName)
+    throw new SelenitaError('defineProject cannot run inside a test\n  hint: use createProject with using, or project.extend')
+  const project = createProject(...configs)
+  beforeAll(() => project.warmUp())
+  afterAll(() => project.dispose())
+  return project
 }

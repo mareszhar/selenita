@@ -2,8 +2,7 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    globals: true,
-    setupFiles: ['./tests/setup.ts'],
+    globals: false,
     include: ['tests/**/*.test.ts'],
     exclude: [
       'dist/**',
@@ -12,7 +11,7 @@ export default defineConfig({
       '__references__/**',
       '__temp__/**',
     ],
-    // beforeAll builds the TS Program eagerly (spec §15). Large projects can
+    // defineProject warms the TS Program in beforeAll. Large projects can
     // take >5 s on a cold run; 30 s gives ample headroom without masking hangs.
     hookTimeout: 30000,
     typecheck: {

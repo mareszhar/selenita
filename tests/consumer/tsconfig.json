@@ -3,7 +3,7 @@
   // The path-mapped imports resolve to the same .d.ts files that the `exports` map
   // points to, so type correctness is verified here. Package-level exports-map
   // resolution (i.e., whether `node_modules/@mszr/selenita` resolves correctly after
-  // `npm install`) is covered by scripts/smoke-test-tarball.mjs, which runs a full
+  // `npm install`) is covered by scripts/smoke-test-tarball.ts, which runs a full
   // pack + install cycle as part of prepublishOnly.
   "compilerOptions": {
     "target": "ES2022",
@@ -14,9 +14,10 @@
       "@mszr/selenita": ["../../dist/index.d.ts"],
       "@mszr/selenita/*": ["../../dist/*.d.ts"]
     },
+    "types": ["node"],
     "strict": true,
     "noEmit": true,
-    "skipLibCheck": true
+    "skipLibCheck": false
   },
   "include": ["./**/*.ts"],
   "exclude": []
