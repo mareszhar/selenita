@@ -9,7 +9,7 @@
   "homepage": "https://github.com/mareszhar/selenita#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mareszhar/selenita"
+    "url": "git+https://github.com/mareszhar/selenita.git"
   },
   "bugs": {
     "url": "https://github.com/mareszhar/selenita/issues"
