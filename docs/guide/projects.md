@@ -82,7 +82,7 @@ project.check({
 
 ### Simulating an installed package
 
-Module resolution is TypeScript's own, so a virtual package must look like a real one — a `package.json` and its declarations. That way an `exports` map restricts subpaths exactly as it would for your users:
+Module resolution is TypeScript's own. Include a virtual `package.json` when testing package metadata, exports, or conditional entries; its `exports` map restricts subpaths exactly as it would for your users:
 
 ```ts
 const project = defineProject({
@@ -96,7 +96,7 @@ const project = defineProject({
 })
 ```
 
-When you only need a declaration shape, skip the package and alias it:
+A virtual `node_modules/fruit-lib/index.d.ts` can resolve without a manifest under TypeScript's normal rules. When you only need a declaration shape, an alias avoids depending on package resolution:
 
 ```ts
 const project = defineProject({

@@ -72,7 +72,7 @@ Each invariant protects a user-facing promise from [the vision](../vision.md). A
 
 4. **TypeScript's words are not rewritten.** Displays, messages, kinds, and positions are TypeScript's. The only normalizations are documented in the reference: quote removal in completion names, deterministic ordering of rename locations, diagnostics, and inlay hints, and the `text` rendering of hovers.
 
-5. **Resolution is TypeScript's own.** Each import resolves with its own resolution mode; there is no fallback resolver. A virtual package needs a `package.json`, as a real one does.
+5. **Resolution is TypeScript's own.** Each import resolves with its own resolution mode; there is no fallback resolver. Virtual packages follow the same rules as disk packages: an `index.d.ts` can resolve without a manifest, while `package.json` models exports and conditional entries.
 
 6. **Observations are pay-per-read.** Each request runs at most once per result, only when read. `errors` never computes suggestion diagnostics; `completionNames` never computes details; freezing a value never reads an unread lazy field (such as a diagnostic's `codeFixes`).
 
