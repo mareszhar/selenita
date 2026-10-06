@@ -79,13 +79,13 @@ For the reviewer: read the tracker's table first, then every changed file in ful
 
 A version numbers the contract, not the diff. Below 1.0: breaking changes bump the minor (0.3.0), everything else the patch. [Vision §8](../vision.md#8-road-to-10) describes when 1.0 is due.
 
-Publishing and Git are separate acts, both owned by the maintainer. An agent prepares a release; it publishes or touches Git only when asked, and authorization for one is not authorization for the other.
+Releases are owned by the maintainer. Running a release command authorizes npm publication and the subsequent release commit, annotated tag, and push. An agent prepares a release; it runs the release command only when explicitly asked.
 
 1. `bun run verify` is green on a clean tree, with the pinned toolchain.
 2. The changelog is final and every breaking change has a migration example.
-3. Run `bun run release:minor` (or `:patch`) in an interactive terminal. The script checks the tree and npm auth, bumps the version, runs `verify` on the bumped version (the build embeds it), and publishes. Publishing inherits the terminal so npm can prompt for browser or two-factor authentication. It never commits, tags, or pushes.
-   - If anything fails **before** publishing, it restores the version files and exits.
-   - Once publishing succeeds, the bumped files stay: the version exists on npm. The script prints the Git commands that finish the release. When a publish outcome is unclear, check `npm view @mszr/selenita versions` before retrying.
-4. The maintainer finishes the release in Git: commit `🔖 release v<version>`, create an annotated tag with `git tag -a v<version> -m 'selenita v<version>'`, then `git push --follow-tags`. Annotated tags are required for `--follow-tags` to include them.
-5. Create the GitHub release for the tag, using the changelog as its notes. The GitHub release is the changelog's permanent home; the repository has no `CHANGELOG.md`.
-6. Migrate the suites you maintain, using the changelog's migration notes — the first real test of whether they are mechanical.
+3. Run `bun run release:minor` (or `:patch`) in an interactive terminal. The script requires a clean tree and a branch with an upstream, checks npm auth, bumps the version, rejects an existing local release tag, runs `verify` on the bumped version (the build embeds it), and publishes. Publishing inherits the terminal so npm can prompt for browser or two-factor authentication.
+   - If any step through `npm publish` fails, it restores the version files and exits without creating a release commit or tag or pushing. When a publish outcome is unclear, check `npm view @mszr/selenita versions` before retrying.
+   - Only after npm reports successful publication, the script stages the version files, commits `🔖 release v<version>`, creates an annotated tag with message `selenita v<version>`, and runs `git push --atomic --follow-tags`. The push uses the configured Git destination; annotated tags let `--follow-tags` include the release tag, and `--atomic` requires the remote to accept the branch and tags together. Git steps inherit the terminal for authentication and signing prompts.
+   - If a Git step fails after publication, the script exits with an error and keeps the bumped version files and completed Git steps: the version exists on npm. It prints only the remaining Git commands. Fix the cause and run those commands; do not rerun the release script for an already published version.
+4. Create the GitHub release for the tag, using the changelog as its notes. The GitHub release is the changelog's permanent home; the repository has no `CHANGELOG.md`.
+5. Migrate the suites you maintain, using the changelog's migration notes — the first real test of whether they are mechanical.
