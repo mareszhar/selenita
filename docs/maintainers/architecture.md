@@ -44,7 +44,7 @@ project.query`…${cursor('x')}…`        project.query({ 'a.ts': …, 'b.ts': 
 | `typescript.ts` | The one import of the backend (`@typescript/typescript6`); the parse cache and version policy (§4) | Anything else. Every other module imports TypeScript from here. |
 | `config.ts` | `ProjectConfig` validation; layer merging; tsconfig discovery and parsing; JSON `compilerOptions` conversion; default preferences; aliases → `paths` | Touch the language service |
 | `host.ts` | The `LanguageServiceHost`: real files, project files, the active fixture overlay, directory existence for virtual paths, module resolution | Decide which fixture is active |
-| `project.ts` | `createProject` and `extend`: lazy service creation, plugin application (and the plugin `info` boundary), fixture activation, derived-project ownership, disposal | Map TypeScript data |
+| `project.ts` | `createProject` and `extend`: lazy service creation, plugin application (and the plugin `info` boundary), fixture activation and observation ownership, derived-project ownership, disposal | Map TypeScript data |
 | `markers.ts` | `cursor`, `mark`, `snippet` values, `snippet.join()` composition, `.scope()` scoping, name validation | Know about projects |
 | `fixture.ts` | Flattening templates and records into a `Fixture`; marker rules | Talk to TypeScript |
 | `results.ts` | `QueryResult`/`CheckResult`: lazy fields, `at`, `rangeOf`, `atEach`, `inspect`, single-cursor guards | Format failures |
@@ -74,7 +74,7 @@ Each invariant protects a user-facing promise from [the vision](../vision.md). A
 
 5. **Resolution is TypeScript's own.** Each import resolves with its own resolution mode; there is no fallback resolver. Virtual packages follow the same rules as disk packages: an `index.d.ts` can resolve without a manifest, while `package.json` models exports and conditional entries.
 
-6. **Observations are pay-per-read.** Each request runs at most once per result, only when read. `errors` never computes suggestion diagnostics; `completionNames` never computes details; freezing a value never reads an unread lazy field (such as a diagnostic's `codeFixes`).
+6. **Observations are pay-per-read.** Each observation is memoized on first read. Native parent requests may be replayed only when unread details or fixes need to rejoin their observation after another checker has become current. `errors` never computes suggestion diagnostics; `completionNames` never computes details; freezing a value never reads an unread lazy field (such as a diagnostic's `codeFixes`).
 
 7. **Results are evidence.** Returned data is frozen. Methods are non-enumerable so equality and snapshots see only data, and single-cursor fields are enumerable only on single-cursor results. Location-bearing values hold a non-enumerable reference to their fixture, which is how matchers render excerpts without copying source.
 
@@ -82,7 +82,9 @@ Each invariant protects a user-facing promise from [the vision](../vision.md). A
 
 9. **Matchers never call the service.** A failure message formats data that was already observed, so printing a failure can neither fail nor change state.
 
-10. **The host says what it lacks.** A plugin reaching for host capability selenita does not provide gets a `SelenitaError` naming it — never `undefined` and a confusing crash later.
+10. **Read order never changes an observation.** Each top-level observation at each marker, file-wide diagnostics, inlay hints, and each inspection use a checker that has answered nothing else for that fixture. Details and fixes join their parent's checker, replaying the parent on a fresh checker after intervening observations. Field-level activation alone never changes ownership.
+
+11. **The host says what it lacks.** A plugin reaching for host capability selenita does not provide gets a `SelenitaError` naming it — never `undefined` and a confusing crash later.
 
 ## 4. Implementation choices
 
@@ -91,11 +93,12 @@ These are how the invariants are met today. Each can change without changing the
 | Choice | Why | Fallback |
 | --- | --- | --- |
 | One active fixture per project, swapped in on read | Makes laziness correct and isolated with no snapshots of programs | — |
+| Re-version active fixture files when observation ownership changes, retaining resolutions within a fixture | A fresh checker makes read order irrelevant without re-parsing the whole project; fixture switches still invalidate resolution for package metadata overlays | Share a checker across markers of the same observation kind only if measured adopter cost requires narrowing the guarantee |
 | A process-wide `DocumentRegistry` shared by all projects | Later projects in a worker reuse parsed files | Private registry per project — same behavior, slower second projects |
-| Versions that identify content: virtual files take a version from one process-wide counter when created (and keep it when re-activated); real files are versioned by a hash of their content when a host first reads them | The shared registry returns a cached parse for a matching path and version without comparing text, so a version must never stand for two contents. Modification times are not enough: a file can change while its mtime stays equal. | Private registries, if hashing costs too much |
+| Versions that identify content: virtual files take a content identity from one process-wide counter when created; active fixture versions also include the observation generation; real files are versioned by a hash of their content when a host first reads them | The shared registry returns a cached parse for a matching path and version without comparing text, so a version must never stand for two contents. Modification times are not enough: a file can change while its mtime stays equal. | Private registries, if hashing costs too much |
 | `resolveModuleNameLiterals` with `getModeForUsageLocation` | TypeScript's own per-import resolution | — |
 | Lazy fields as memoizing accessors over closures; values frozen container-by-container | Pay-per-read without a public selection API | — |
-| The plugin `info` boundary as an object whose unsupported members throw | Honest failure for plugins that need tsserver (invariant 10). The one place a `Proxy` is acceptable. | — |
+| The plugin `info` boundary as an object whose unsupported members throw | Honest failure for plugins that need tsserver (invariant 11). The one place a `Proxy` is acceptable. | — |
 
 ## 5. Where to change what
 

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -34,6 +34,7 @@ const testSource = `
 import type { Plugin } from '@mszr/selenita/vitest'
 import { createProject, cursor as coreCursor, snippet as coreSnippet } from '@mszr/selenita'
 import { cursor, defineProject, mark, snippet } from '@mszr/selenita/vitest'
+import { cursor as kitCursor, mark as kitMark, snippet as kitSnippet } from '@acme/kit'
 import { expect, it } from 'vitest'
 const plugin: Plugin = () => ({ create(info) {
   if (info.config.label !== 'installed') throw new Error('missing plugin config')
@@ -43,6 +44,13 @@ const project = defineProject({ tsconfig: false, plugins: [[plugin, { label: 'in
 it('uses the installed entries, plugins, records and every matcher', async () => {
   expect(coreCursor).toBe(cursor)
   expect(coreSnippet).toBe(snippet)
+  expect(kitCursor).not.toBe(coreCursor)
+  const kitSource = kitSnippet\`const fruit = { apple: 1 }; void fruit.\${kitMark('key')\`apple\`}; fruit.\${kitCursor('member')}\`
+  const kitResult = project.query\`\${kitSource.scope('kit')}\`
+  expect(kitResult.at('kit.member')).toSuggestOnly(['apple'])
+  expect(kitResult.rangeOf('kit.key').text).toBe('apple')
+  expect(project.query\`const fruit = { pear: 1 }; fruit.\${kitCursor}\`).toSuggestOnly(['pear'])
+
   const fragment = snippet\`fruit.\${coreCursor('member')}\`
   const result = project.query({
     'fruit.ts': 'export const fruit = { apple: 1, pear: 2 }',
@@ -79,6 +87,19 @@ try {
       dependencies: { '@mszr/selenita': `file:${tarball}`, 'typescript': compilerVersion, 'vitest': '5.0.3', '@types/node': '25.9.1', 'typescript-plugin-css-modules': '5.2.0' },
     })
     runCommand('bun', ['install', '--ignore-scripts'], consumer)
+    const kit = join(consumer, 'node_modules/@acme/kit')
+    mkdirSync(kit, { recursive: true })
+    createJson(join(kit, 'package.json'), {
+      name: '@acme/kit',
+      version: '1.0.0',
+      type: 'module',
+      exports: { '.': { types: './index.d.ts', default: './index.js' } },
+      dependencies: { '@mszr/selenita': `file:${tarball}` },
+    })
+    for (const file of ['index.js', 'index.d.ts'])
+      writeFileSync(join(kit, file), 'export { cursor, mark, snippet } from \'@mszr/selenita\'\n')
+    runCommand('bun', ['install', '--ignore-scripts'], kit)
+
     for (const file of ['main.types.ts', 'vitest.types.ts'])
       writeFileSync(join(consumer, file), readFileSync(join(root, 'tests/consumer', file)))
     createJson(join(consumer, 'tsconfig.json'), {
@@ -86,6 +107,29 @@ try {
       include: ['*.ts'],
     })
     writeFileSync(join(consumer, 'package.test.ts'), testSource)
+    writeFileSync(join(consumer, 'public-surface.ts'), readFileSync(join(root, 'tests/consumer/public-surface.ts')))
+    writeFileSync(join(consumer, 'documentation.test.ts'), `
+import { cursor, defineProject } from '@mszr/selenita/vitest'
+import { expect, it } from 'vitest'
+import { CORE_EXPORTS, PUBLIC_MEMBERS } from './public-surface'
+const project = defineProject({ tsconfig: false })
+for (const entry of ['@mszr/selenita', '@mszr/selenita/vitest']) {
+  it('documents every packed export from ' + entry, () => {
+    const result = project.query\`import * as api from '\${entry}'; api.\${cursor}\`
+    const names = entry.endsWith('/vitest') ? [...CORE_EXPORTS, 'defineProject'] : CORE_EXPORTS
+    expect(result).toSuggestOnly(names)
+    expect(result).toSuggest(names, { requireDocumentation: true })
+  })
+}
+for (const [type, names] of Object.entries(PUBLIC_MEMBERS)) {
+  it('documents every packed ' + type + ' member', () => {
+    const result = project.query\`import type { \${type} } from '@mszr/selenita'; declare const value: \${type}; value.\${cursor}\`
+    expect(result).toSuggestOnly(names)
+    expect(result).toSuggest(names, { requireDocumentation: true })
+  })
+}
+`)
+
     writeFileSync(join(consumer, 'vitest.config.ts'), 'export default { test: { globals: false } }\n')
     writeFileSync(join(consumer, 'button.module.css'), '.button { color: red }\n.card { color: blue }\n')
     writeFileSync(join(consumer, 'environment.d.ts'), 'export {}\n')

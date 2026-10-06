@@ -1,0 +1,25 @@
+// Literal editor contracts shared by source and installed declaration checks.
+export const PUBLIC_MEMBERS = {
+  Project: ['query', 'check', 'extend', 'warmUp', 'dispose'],
+  QueryResult: ['at', 'atEach', 'rangeOf', 'errors', 'diagnostics', 'inlayHints', 'files', 'inspect', 'completionNames', 'completions', 'findCompletion', 'hover', 'signatureHelp', 'rename'],
+  CheckResult: ['rangeOf', 'errors', 'diagnostics', 'inlayHints', 'files', 'inspect'],
+  Observations: ['completionNames', 'completions', 'findCompletion', 'hover', 'signatureHelp', 'rename'],
+  Completion: ['name', 'kind', 'isDeprecated', 'isOptional', 'isRecommended', 'source', 'insertText', 'replacementRange', 'sortText', 'displayText', 'documentation', 'tags', 'codeActions'],
+  Hover: ['displayText', 'documentation', 'tags', 'text', 'range'],
+  SignatureHelp: ['signatures', 'activeSignature', 'activeParameter', 'activeSignatureIndex', 'activeParameterIndex'],
+  Signature: ['label', 'documentation', 'tags', 'parameters'],
+  Parameter: ['name', 'label', 'documentation'],
+  InlayHint: ['text', 'kind', 'range'],
+  Rename: ['canRename', 'reason', 'locations'],
+  RenameLocation: ['file', 'start', 'end', 'text', 'prefixText', 'suffixText'],
+  Diagnostic: ['code', 'severity', 'message', 'range', 'relatedInformation', 'codeFixes'],
+  RelatedInformation: ['message', 'range'],
+  CodeAction: ['description', 'edits', 'fixedFiles'],
+  TextEdit: ['range', 'newText'],
+  Range: ['file', 'start', 'end', 'text'],
+  Point: ['line', 'column', 'offset'],
+  DocTag: ['name', 'text'],
+  CompletionComparison: ['hasParity', 'baseline', 'differences'],
+  InspectionContext: ['service', 'typescript', 'resolvePath'],
+} as const
+export const CORE_EXPORTS = ['createProject', 'cursor', 'mark', 'snippet', 'compareCompletions', 'SelenitaError']

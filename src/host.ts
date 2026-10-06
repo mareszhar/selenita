@@ -9,6 +9,9 @@ export class ProjectHost implements ts.LanguageServiceHost {
   private readonly projectFiles = new Map<string, FixtureFile>()
   private readonly realFiles = new Map<string, { text: string, version: string }>()
   private fixture: Fixture | undefined
+  private observation: object | undefined
+  private observationVersion = 0
+  private hasChangedFixture = false
   private projectVersion = 0
   constructor(readonly config: ResolvedConfig) {
     // TypeScript requests normalized paths even when callers use backslashes.
@@ -20,8 +23,24 @@ export class ProjectHost implements ts.LanguageServiceHost {
     if (fixture === this.fixture)
       return
     this.fixture = fixture
+    this.observation = undefined
+    this.hasChangedFixture = true
     this.projectVersion++
   }
+
+  activateObservation(observation: object): boolean {
+    if (observation === this.observation)
+      return false
+    if (this.observation !== undefined) {
+      // A new fixture version rebuilds the checker while retaining parsed structure and resolutions.
+      this.observationVersion++
+      this.projectVersion++
+    }
+    this.observation = observation
+    return true
+  }
+
+  markProgramCurrent(): void { this.hasChangedFixture = false }
 
   private findVirtualFile(file: string): FixtureFile | undefined {
     return this.fixture?.files.get(file) ?? this.projectFiles.get(file)
@@ -41,12 +60,18 @@ export class ProjectHost implements ts.LanguageServiceHost {
 
   getProjectVersion(): string { return String(this.projectVersion) }
   // Fixture package.json overlays can invalidate an import without changing its text.
-  hasInvalidatedResolutions(): boolean { return true }
+  hasInvalidatedResolutions = (): boolean => this.hasChangedFixture
   getScriptFileNames(): string[] {
     return [...new Set([...this.config.rootFiles, ...this.projectFiles.keys(), ...(this.fixture?.files.keys() ?? [])])]
   }
 
-  getScriptVersion(file: string): string { return this.findVirtualFile(file)?.version ?? this.findRealFile(file)?.version ?? 'missing' }
+  getScriptVersion(file: string): string {
+    const fixtureFile = this.fixture?.files.get(file)
+    if (fixtureFile)
+      return `${fixtureFile.version}:${this.observationVersion}`
+    return this.findVirtualFile(file)?.version ?? this.findRealFile(file)?.version ?? 'missing'
+  }
+
   getScriptSnapshot(file: string): ts.IScriptSnapshot | undefined {
     const text = this.readFile(file)
     return text === undefined ? undefined : ts.ScriptSnapshot.fromString(text)

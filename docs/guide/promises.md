@@ -25,6 +25,8 @@ expect(result).toSuggest(['get', 'post', 'put', 'patch', 'delete'])
 expect(result).toSuggest('use')
 ```
 
+Completions answer as the user types; errors answer as the file opens, independently of the order you read them.
+
 `toSuggest` takes one name or a list and passes when every name is suggested. Extra suggestions are fine — this is the right default, because TypeScript and other libraries may add entries you do not control.
 
 ### Forbidden names
@@ -112,10 +114,13 @@ const autoImportProject = defineProject({
   preferences: { includeCompletionsForModuleExports: true },
   files: { 'auto-import-seed.ts': `import type { Client } from '@acme/http'` },
 })
-const result = autoImportProject.query`export {}; crea${cursor}`
+const result = autoImportProject.query`export {}; createClient${cursor}()`
 const completion = result.findCompletion({ name: 'createClient', source: '@acme/http' })
 expect(completion).toMatchObject({ name: 'createClient', source: '@acme/http' })
-expect(completion?.codeActions[0]?.edits[0]?.newText).toMatch(/from ['"]@acme\/http['"]/)
+expect(result.errors).toHaveError(2304, /createClient/)
+const action = completion!.codeActions[0]!
+expect(action.edits[0]?.newText).toMatch(/from ['"]@acme\/http['"]/)
+expect(autoImportProject.check(action.fixedFiles)).toBeClean()
 ```
 
 `includeCompletionsForModuleExports` enables suggestions from modules known to the service; it does not reproduce an editor's full package-discovery machinery. Here `codeActions` holds the new import in the queried file, so the test can promise that users auto-import your public entry, never a deep internal path.

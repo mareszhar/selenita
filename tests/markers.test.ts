@@ -1,5 +1,6 @@
 import type { Interpolation } from '../src/types'
 import { describe, expect, it } from 'vitest'
+import { version } from '../package.json'
 import { SelenitaError } from '../src/errors'
 import { createFixture } from '../src/fixture'
 import { cursor, mark, snippet } from '../src/markers'
@@ -148,4 +149,16 @@ describe('marker rules', () => {
     expect(() => check`${value as Interpolation}`).toThrow(SelenitaError)
     expect(check`${'source'}`.files.size).toBe(1)
   })
+})
+
+it('accepts same-version marker sources and explains version mismatches', () => {
+  const symbol = Symbol.for('@mszr/selenita.marker')
+  const source = { kind: 'cursor', name: 'foreign', strings: [], values: [], scopes: [] }
+  const marker = { [symbol]: { version, source } } as unknown as Interpolation
+  expect(query`x${marker}`.markers.get('foreign')).toMatchObject({ start: 1, end: 1 })
+  const foreign = { [symbol]: { version: '0.0.0', source } } as unknown as Interpolation
+  expect(() => query`${foreign}`).toThrow(`marker from @mszr/selenita 0.0.0 in a project from ${version}`)
+  expect(() => query`${foreign}`).toThrow(/hint: install one version/)
+  expect(() => query`${(() => {}) as unknown as Interpolation}`).toThrow(/invalid interpolation of type function/)
+  expect(query`${cursor('local')}`.markers.has('local')).toBe(true)
 })

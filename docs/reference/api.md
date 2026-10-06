@@ -8,7 +8,7 @@ The exact public contract of `@mszr/selenita`. Guides explain how to use it; thi
 - [Projects](#projects): [`createProject`](#createproject), [`defineProject`](#defineproject), [`ProjectConfig`](#projectconfig), [layers](#configuration-layers), [`Project`](#project), [plugins](#plugins)
 - [Fixtures](#fixtures): [`cursor`](#cursor), [`mark`](#mark), [`snippet`](#snippet), [interpolation](#interpolation), [files](#fixture-files)
 - [Results](#results): [`QueryResult`](#queryresult), [`CheckResult`](#checkresult), [`Observations`](#observations), [laziness](#laziness-and-activation)
-- [Observation types](#observation-types): [`Completion`](#completion), [`Hover`](#hover), [`SignatureHelp`](#signaturehelp), [`InlayHint`](#inlayhint), [`Rename`](#rename), [`Diagnostic`](#diagnostic), [`CodeFix`](#codefix), [`Range`](#range)
+- [Observation types](#observation-types): [`Completion`](#completion), [`Hover`](#hover), [`SignatureHelp`](#signaturehelp), [`InlayHint`](#inlayhint), [`Rename`](#rename), [`Diagnostic`](#diagnostic), [`CodeAction`](#codeaction), [`Range`](#range)
 - [`compareCompletions`](#comparecompletions)
 - [Errors](#errors)
 
@@ -136,6 +136,8 @@ selenita is a lighter host than tsserver. `info` provides:
 A plugin sees virtual files through the service and host. A plugin that reads the file system directly (with `node:fs`) sees the disk. A plugin that throws during `create` fails the project's first use, with the plugin's error as `cause`.
 
 ## Fixtures
+
+Markers carry the selenita version that made them. A project accepts cursors, marks, and snippets from any installed copy of its own version, including helpers re-exported by a testing kit. A marker from a different version throws, naming both versions; use one version or import helpers from the package that creates the project.
 
 ```ts
 interface QueryTag {
@@ -302,6 +304,8 @@ interface Observations {
 
 A result is a lazy view: each observation is computed the first time it is read, then kept. Observation fields are enumerable, so `toEqual` and snapshots see them — and reading them computes them. That is why it is best to snapshot the fields a promise concerns, not whole results. Methods are not enumerable.
 
+Read order never changes an observation. Each observation is answered by a fresh type checker over the fixture: completions answer as the user types; errors answer as the file opens. Each marker's completions, hover, signature help, and rename are separate observations; file-wide diagnostics (including errors and fixes), inlay hints, and each `inspect` callback are separate too. Completion details and diagnostic fixes join their parent's checker while it is current; after another observation, a fresh checker recomputes the parent before answering the follow-up. `completionNames` and `completions` share one list, and `errors` and `diagnostics` share their diagnostic phases.
+
 A project shows the editor one fixture at a time. Reading an observation activates its result's fixture first: a no-op when it is already active, otherwise it swaps it back in. Consequences:
 
 - A result always describes its own fixture, even when read after later queries.
@@ -334,7 +338,6 @@ interface Completion {
   readonly codeActions: readonly CodeAction[] // extra edits accepting it would make, e.g. an import
 }
 
-interface CodeAction { readonly description: string, readonly edits: readonly TextEdit[] }
 type CompletionKind = 'property' | 'method' | 'function' | 'const' | 'let' | 'var' | 'class' | 'interface' | 'type' | 'enum' | 'enum member' | 'module' | 'keyword' | 'alias' | 'parameter' | 'string' | (string & {})
 interface DocTag { readonly name: string, readonly text: string }
 ```
@@ -408,24 +411,24 @@ interface Diagnostic {
   readonly message: string // the full message chain, flattened as TypeScript prints it
   readonly range: Range | null // null for diagnostics without a file position
   readonly relatedInformation: readonly RelatedInformation[]
-  readonly codeFixes: readonly CodeFix[] // resolved on first read
+  readonly codeFixes: readonly CodeAction[] // resolved on first read
 }
 interface RelatedInformation { readonly message: string, readonly range: Range | null }
 ```
 
-### `CodeFix`
+### `CodeAction`
 
 ```ts
-interface CodeFix {
+interface CodeAction {
   readonly description: string
-  readonly edits: readonly TextEdit[] // text changes, including files the fix creates
+  readonly edits: readonly TextEdit[] // text changes, including files the action creates
   /** The fixture's files with these edits applied, plus any other file the edits change or create. */
   readonly fixedFiles: Readonly<Record<string, string>>
 }
 interface TextEdit { readonly range: Range, readonly newText: string }
 ```
 
-`codeFixes` requests `getCodeFixesAtPosition` for the diagnostic's range and code. `fixedFiles` is computed on first read, as a text transformation: edits are applied per file from the end backwards, giving a valid record-form fixture, so `project.check(fix.fixedFiles)` re-checks the fixed code. Overlapping edits throw. Reading `fixedFiles` on a fix that also needs an editor command (which text cannot represent) throws, naming the command; its `edits` remain readable.
+`codeFixes` requests `getCodeFixesAtPosition` for the diagnostic's range and code. Completion `codeActions` and diagnostic `codeFixes` share this shape. `fixedFiles` is computed on first read, as a text transformation: edits are applied per file from the end backwards, giving a valid record-form fixture, so `project.check(action.fixedFiles)` re-checks the changed code. Files outside the fixture are read from the project and included in the result. Overlapping edits throw. Reading `fixedFiles` on an action that also needs an editor command (which text cannot represent) throws, naming the command; its `edits` remain readable.
 
 ### `Range`
 
@@ -468,6 +471,7 @@ selenita throws `SelenitaError` (a subclass of `Error`) for misuse and for failu
 | TypeScript returns no data | Not an error: empty list or `null` |
 | The TypeScript service throws during an observation | `SelenitaError` naming the request and marker, with a fixture excerpt, the backend version, and the original error as `cause`. The project stays usable. |
 | Invalid configuration, interpolation, or marker usage | `SelenitaError` at the call that caused it |
+| A marker made by a different selenita version | `SelenitaError` naming both versions, at the query or check that interpolates it |
 | Unknown marker in `at`, `rangeOf`, `atEach`; a listed scope missing in `atEach` | `SelenitaError` listing the available names |
 | Reading a single-cursor field on a result with zero or several cursors | `SelenitaError` listing cursors and pointing to `at()` |
 | A plugin reads a host member selenita does not provide | `SelenitaError` naming the member |

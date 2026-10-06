@@ -83,9 +83,18 @@ export class ProjectRuntime implements Project {
     return this.requireService()
   }
 
+  activateObservation(fixture: Fixture, request: string, observation: object): { service: ts.LanguageService, isNewObservation: boolean } {
+    const service = this.activateFixture(fixture, request)
+    const isNewObservation = this.host.activateObservation(observation)
+    service.getProgram()
+    this.host.markProgramCurrent()
+    return { service, isNewObservation }
+  }
+
   warmUp = (): void => {
     this.validateOwnership('warm up')
     this.requireService().getProgram()
+    this.host.markProgramCurrent()
   }
 
   dispose = (): void => {

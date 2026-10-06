@@ -1,7 +1,8 @@
 import { expect, it } from 'vitest'
 import { cursor, defineProject, mark } from '../src/vitest'
+import { CORE_EXPORTS, PUBLIC_MEMBERS } from './consumer/public-surface'
 
-const project = defineProject({ tsconfig: false, aliases: { '@mszr/selenita/vitest': './src/vitest.ts' } })
+const project = defineProject({ tsconfig: false, aliases: { '@mszr/selenita': './src/index.ts', '@mszr/selenita/vitest': './src/vitest.ts' } })
 // This is source text for the editor fixture, including its template interpolation.
 // eslint-disable-next-line no-template-curly-in-string
 const declaration = 'import { cursor, defineProject, mark, snippet } from \'@mszr/selenita/vitest\';\nconst project = defineProject({ tsconfig: false });\nconst result = project.query`const fruit = { apple: 1 }; ${cursor(\'root\')}; ${mark(\'declaration\')`fruit`}; ${snippet`fruit.${cursor(\'member\')}`.scope(\'first\')}; ${snippet`fruit.${cursor(\'member\')}`.scope(\'second\')}`;\n'
@@ -45,3 +46,19 @@ it('documents joining and autocompletes the markers and scopes it preserves', ()
   const scopes = project.query`${declaration}${joinedDeclaration}joinedResult.atEach('word', ['${cursor('scope')}'])`
   expect(scopes.at('scope')).toSuggestOnly(['ctx.first', 'ctx.second'])
 })
+
+for (const entry of ['@mszr/selenita', '@mszr/selenita/vitest']) {
+  it(`documents every value exported from ${entry}`, () => {
+    const result = project.query`import * as api from '${entry}'; api.${cursor}`
+    const names = entry.endsWith('/vitest') ? [...CORE_EXPORTS, 'defineProject'] : CORE_EXPORTS
+    expect(result).toSuggestOnly(names)
+    expect(result).toSuggest(names, { requireDocumentation: true })
+  })
+}
+for (const [type, names] of Object.entries(PUBLIC_MEMBERS)) {
+  it(`documents every ${type} member`, () => {
+    const result = project.query`import type { ${type} } from '@mszr/selenita'; declare const value: ${type}; value.${cursor}`
+    expect(result).toSuggestOnly(names)
+    expect(result).toSuggest(names, { requireDocumentation: true })
+  })
+}

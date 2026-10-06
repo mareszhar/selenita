@@ -36,7 +36,8 @@ project ──configures──▶ service
 | **display text** | TypeScript's rendering of a symbol: `(property) name: string`. Presentation, not type identity. | The symbol's type. |
 | **documentation** | The prose attached to a symbol (TSDoc), without tags. | `displayText`, or the whole tooltip (`text`). |
 | **diagnostic** | Something the editor underlines: an error, warning, suggestion, or message. **errors** are diagnostics with severity `error`. | Exceptions. |
-| **code fix** | An edit the editor offers for a diagnostic (VS Code's "quick fix"). | — |
+| **code action** | Edits the editor offers alongside a suggestion (such as an auto-import) or for a diagnostic, with the files they produce. | — |
+| **code fix** | A diagnostic's code action (VS Code's "quick fix"): `diagnostic.codeFixes`. | A completion's `codeActions`. |
 | **range** | Located text: `file`, `start`, `end` (exclusive), `text`. Every location in selenita is a range. | TypeScript's `TextSpan`. |
 | **parity** | Equal completion sets for the same cursor across scopes. | Equal display text or equal order. |
 | **plugin** | A TypeScript language-service plugin, given as its standard factory. selenita hosts it with less than tsserver offers, and says when a plugin needs more. | Vitest or bundler plugins. |

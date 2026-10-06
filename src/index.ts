@@ -8,7 +8,6 @@ export type {
   CheckResult,
   CheckTag,
   CodeAction,
-  CodeFix,
   CompilerOptionsJson,
   Completion,
   CompletionComparison,

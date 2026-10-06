@@ -13,14 +13,14 @@ const observationNames = ['completionNames', 'completions', 'hover', 'signatureH
 /** A frozen lazy view that always observes its own fixture. */
 export function createResult(project: ProjectRuntime, fixture: Fixture, isQuery: boolean): QueryResult | CheckResult {
   const result = {} as QueryResult
-  const context: ObservationContext = { project, fixture }
+  const context: ObservationContext = { project, fixture, observation: { kind: 'diagnostics' } }
   const observations = new Map<FixtureMarker, Observations>()
   const cursors = [...fixture.markers.values()].filter(marker => marker.kind === 'cursor')
   const requireObservations = (marker: FixtureMarker): Observations => {
     const cachedObservations = observations.get(marker)
     if (cachedObservations)
       return cachedObservations
-    const value = createObservations({ project, fixture, marker })
+    const value = createObservations({ project, fixture, marker, observation: { kind: 'completions' } })
     observations.set(marker, value)
     return value
   }
@@ -38,7 +38,7 @@ export function createResult(project: ProjectRuntime, fixture: Fixture, isQuery:
       return createRange(project.config.root, marker.file, fixture.files.get(marker.file)!.text, marker.start, marker.end - marker.start, fixture)
     } },
     inspect: { value<Value>(runInspection: (context: InspectionContext) => Value): Value {
-      const service = project.activateFixture(fixture, 'inspect')
+      const { service } = project.activateObservation(fixture, 'inspect', {})
       const value = runInspection({ service, typescript: ts, resolvePath: file => resolve(project.config.root, file) })
       if (value !== null && (typeof value === 'object' || typeof value === 'function') && 'then' in value && typeof value.then === 'function')
         throw new SelenitaError('inspect callback returned a thenable\n  hint: inspect synchronously while this fixture is active')

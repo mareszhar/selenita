@@ -356,6 +356,12 @@ describe('completion insertion and details', () => {
     expect(completion?.codeActions.flatMap(action => action.edits).some(edit => edit.newText.includes('pickFruit'))).toBe(true)
     expect(completion?.displayText).toBe('function pickFruit(): Fruit')
     expect(result.files['__selenita__.ts']).not.toContain('import')
+    const acceptance = project.query`export {}; pickFruit${cursor}()`
+    expect(acceptance.errors.map(error => error.code)).toContain(2304)
+    const action = acceptance.findCompletion({ name: 'pickFruit', source: 'fruit-kit' })!.codeActions[0]!
+    expect(project.check(action.fixedFiles).errors).toEqual([])
+    expect(Object.isFrozen(action.fixedFiles)).toBe(true)
+
     expect(result.inspect(({ service, resolvePath }) => service.getCompletionsAtPosition(resolvePath('__selenita__.ts'), result.rangeOf('auto').start.offset, config.preferences)?.entries.some(entry => entry.name === 'pickFruit'))).toBe(true)
   })
 })
@@ -546,4 +552,123 @@ it('resolves the guide re-export relative to the virtual module directory', () =
   const result = project.query`import { ds } from '#kit/system'; ds.${cursor}`
   expect(result.completionNames).toEqual(['color'])
   expect(project.check`import { ds } from '#kit/system'; const color: string = ds.color`.errors).toEqual([])
+})
+
+it('applies completion actions across fixture and project files, and keeps command edits readable', () => {
+  for (const needsCommand of [false, true]) {
+    const plugin: Plugin = () => ({ create(info) {
+      return { ...info.languageService, getCompletionEntryDetails(file, position, name) {
+        return {
+          name,
+          kind: ts.ScriptElementKind.memberVariableElement,
+          kindModifiers: '',
+          displayParts: [],
+          documentation: [],
+          codeActions: [{
+            description: 'Update fruit files',
+            changes: [
+              { fileName: file, textChanges: [{ span: { start: 0, length: 0 }, newText: '// accepted\n' }] },
+              { fileName: resolve('other.ts'), textChanges: [{ span: { start: 0, length: 3 }, newText: 'two' }] },
+              { fileName: resolve('project.ts'), textChanges: [{ span: { start: 0, length: 3 }, newText: 'new' }] },
+            ],
+            ...(needsCommand ? { commands: [{ type: 'install package', file, packageName: 'fruit' }] } : {}),
+          }],
+        }
+      } }
+    } })
+    using project = createProject({ tsconfig: false, files: { 'project.ts': 'old source' }, plugins: [plugin] })
+    const result = project.query({ 'use.ts': snippet`const fruit = { apple: 1 }; fruit.${cursor}`, 'other.ts': 'one source' })
+    const action = result.findCompletion('apple')!.codeActions[0]!
+    expect(action.edits.map(edit => edit.newText)).toEqual(['// accepted\n', 'two', 'new'])
+    if (needsCommand) {
+      expect(() => action.fixedFiles).toThrow(/install package[\s\S]*hint:/)
+      expect(action.edits).toHaveLength(3)
+    }
+    else {
+      expect(action.fixedFiles).toEqual({ 'use.ts': '// accepted\nconst fruit = { apple: 1 }; fruit.', 'other.ts': 'two source', 'project.ts': 'new source' })
+      expect(Object.isFrozen(action)).toBe(true)
+      expect(Object.isFrozen(action.fixedFiles)).toBe(true)
+    }
+  }
+})
+
+const callbackDefinitions = `
+interface Tools { unit: (n: number) => string }
+type FieldInput<V> = V | ((tools: Tools) => V)
+declare function add<const G extends Record<string, unknown>>(fields: { [K in keyof G]: FieldInput<G[K]> }): G;
+`
+it('answers unfinished and complete callbacks independently of read order', () => {
+  for (const complete of [false, true]) {
+    for (const first of ['completions', 'errors', 'hover'] as const) {
+      using project = createProject({ tsconfig: false })
+      const result = project.query`${callbackDefinitions}add({ md: tools => tools.${cursor}${complete ? 'unit(1)' : ''} })`
+      void result[first]
+      expect(result.completionNames).toEqual(complete ? ['unit'] : [])
+      expect(result.errors.map(error => error.code)).toEqual(complete ? [] : [1003])
+    }
+  }
+})
+
+it('gives each observation a program and rejoins lazy follow-ups with their parent', () => {
+  const requests: { name: string, program: unknown }[] = []
+  const plugin: Plugin = () => ({ create(info) {
+    const service = { ...info.languageService }
+    for (const name of requestNames) {
+      const original = info.languageService[name] as (...args: unknown[]) => unknown
+      ;(service as unknown as Record<string, (...args: unknown[]) => unknown>)[name] = (...args) => {
+        requests.push({ name, program: info.languageService.getProgram() })
+        return original.apply(info.languageService, args)
+      }
+    }
+    return service
+  } })
+  using project = createProject({ tsconfig: false, plugins: [plugin] })
+  const result = project.query`const fruit = { apple: 1, pear: 2 }; fruit.${cursor}apple; missingFruit`
+  expect(result.completionNames).toEqual(['apple', 'pear'])
+  expect(result.findCompletion('apple')?.displayText).toBe('(property) apple: number')
+  expect(requests.map(request => request.name)).toEqual(['getCompletionsAtPosition', 'getCompletionEntryDetails'])
+  expect(requests[0]!.program).toBeDefined()
+  expect(requests[1]!.program).toBe(requests[0]!.program)
+  const firstProgram = requests[0]!.program
+  expect(result.hover?.displayText).toContain('apple: number')
+  expect(requests[2]!.program).not.toBe(firstProgram)
+  // A detail not yet read must replay the list on a fresh checker after hover.
+  expect(result.findCompletion('pear')?.displayText).toContain('pear: number')
+  expect(requests.slice(3).map(request => request.name)).toEqual(['getCompletionsAtPosition', 'getCompletionEntryDetails'])
+  expect(requests[3]!.program).not.toBe(firstProgram)
+  expect(requests[4]!.program).toBe(requests[3]!.program)
+  const count = requests.length
+  void result.completions
+  void result.findCompletion('pear')!.documentation
+  expect(requests).toHaveLength(count)
+  const errors = result.errors
+  expect(errors.map(error => error.code)).toContain(2304)
+  const diagnostics = requests.slice(count)
+  expect(diagnostics.map(request => request.name)).toEqual(['getSyntacticDiagnostics', 'getSemanticDiagnostics'])
+  expect(diagnostics[0]!.program).toBe(diagnostics[1]!.program)
+  const inspected = result.inspect(({ service }) => service.getProgram())
+  expect(inspected).not.toBe(diagnostics[0]!.program)
+  expect(result.inspect(({ service }) => service.getProgram())).not.toBe(inspected)
+  void errors.find(error => error.code === 2304)!.codeFixes
+  expect(requests.slice(count + 2).map(request => request.name)).toEqual(['getSyntacticDiagnostics', 'getSemanticDiagnostics', 'getCodeFixesAtPosition'])
+  const followups = requests.slice(-3)
+  expect(followups[0]!.program).not.toBe(inspected)
+  expect(followups.every(request => request.program === followups[0]!.program)).toBe(true)
+})
+
+it('answers every scoped completion member on its own program', () => {
+  const programs: unknown[] = []
+  const plugin: Plugin = () => ({ create(info) {
+    return { ...info.languageService, getCompletionsAtPosition(...args) {
+      programs.push(info.languageService.getProgram())
+      return info.languageService.getCompletionsAtPosition(...args)
+    } }
+  } })
+  using project = createProject({ tsconfig: false, plugins: [plugin] })
+  const result = project.query`const fruit = { apple: 1 }; ${snippet.join(['first', 'second'].map(scope => snippet`fruit.${cursor('member')}apple`.scope(scope)), '; ')}`
+  for (const member of Object.values(result.atEach('member')))
+    expect(member.completionNames).toEqual(['apple'])
+  expect(programs).toHaveLength(2)
+  expect(programs[0]).toBeDefined()
+  expect(programs[1]).not.toBe(programs[0])
 })

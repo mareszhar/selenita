@@ -266,6 +266,8 @@ export function createKitConfig({ system = DEFAULT_SYSTEM }: KitOptions = {}): P
 }
 ```
 
+Re-exported markers work across separate installed copies of the same selenita version; the kit and its users should use the same version.
+
 Users compose it like any config — with their own layers on top:
 
 ```ts
@@ -295,6 +297,8 @@ A kit may also ship a Vitest convenience (`defineKitProject = (options, ...confi
 | `diagnostics` | those plus suggestion diagnostics |
 | `inlayHints` | inlay hints for each fixture file |
 | a diagnostic's `codeFixes` | code fixes for that diagnostic |
+
+Each observation pays for its own type checker over already-parsed files. Reading one observation keeps the initial cost; additional observations, including each `atEach` member, pay to check what they need independently. Re-reading a memoized field costs no request. Completion details and diagnostic fixes reuse their parent checker when it is current, or replay the parent on a fresh checker after an intervening observation.
 
 So the cheapest test is the one that reads only what its promise needs — which is also the clearest test.
 
