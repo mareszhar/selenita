@@ -32,11 +32,12 @@ try {
   if (runCommand('git', ['status', '--porcelain']))
     throw new Error('release requires a clean tree; review and commit changes first')
   console.log(`Publishing as ${runCommand('npm', ['whoami'])}`)
-  console.log(runCommand('bun', ['run', 'verify']))
   snapshot = createVersionSnapshot()
   runCommand('npm', ['version', releaseType!, '--no-git-tag-version', '--ignore-scripts'])
   runCommand('bun', ['install', '--lockfile-only', '--ignore-scripts'])
   const { version } = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as { version: string }
+  // Verify after the bump: the build embeds the package version, and this gate builds what gets published.
+  console.log(runCommand('bun', ['run', 'verify']))
   // verify already ran; disable lifecycle scripts to avoid a second recursive gate.
   // npm only handles browser/2FA challenges when both stdin and stdout are terminals.
   execFileSync('npm', ['publish', '--access', 'public', '--ignore-scripts'], { cwd: root, stdio: 'inherit' })

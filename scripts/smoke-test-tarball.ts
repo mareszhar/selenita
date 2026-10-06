@@ -35,6 +35,7 @@ import type { Plugin } from '@mszr/selenita/vitest'
 import { createProject, cursor as coreCursor, snippet as coreSnippet } from '@mszr/selenita'
 import { cursor, defineProject, mark, snippet } from '@mszr/selenita/vitest'
 import { cursor as kitCursor, mark as kitMark, snippet as kitSnippet } from '@acme/kit'
+import { readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
 const plugin: Plugin = () => ({ create(info) {
   if (info.config.label !== 'installed') throw new Error('missing plugin config')
@@ -45,6 +46,13 @@ it('uses the installed entries, plugins, records and every matcher', async () =>
   expect(coreCursor).toBe(cursor)
   expect(coreSnippet).toBe(snippet)
   expect(kitCursor).not.toBe(coreCursor)
+  // Marker identity must carry the published package version, not a stale build constant.
+  const { version } = JSON.parse(readFileSync(new URL('./node_modules/@mszr/selenita/package.json', import.meta.url), 'utf8'))
+  const identity = Symbol.for('@mszr/selenita.marker')
+  expect((cursor as any)[identity].version).toBe(version)
+  expect((kitCursor as any)[identity].version).toBe(version)
+  const foreign = { [identity]: { version: '0.0.0', source: { kind: 'cursor', name: 'foreign', strings: [], values: [], scopes: [] } } }
+  expect(() => project.query\`\${foreign as any}\`).toThrow(\`marker from @mszr/selenita 0.0.0 in a project from \${version}\`)
   const kitSource = kitSnippet\`const fruit = { apple: 1 }; void fruit.\${kitMark('key')\`apple\`}; fruit.\${kitCursor('member')}\`
   const kitResult = project.query\`\${kitSource.scope('kit')}\`
   expect(kitResult.at('kit.member')).toSuggestOnly(['apple'])

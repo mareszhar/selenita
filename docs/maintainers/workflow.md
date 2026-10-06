@@ -83,7 +83,7 @@ Publishing and Git are separate acts, both owned by the maintainer. An agent pre
 
 1. `bun run verify` is green on a clean tree, with the pinned toolchain.
 2. The changelog is final and every breaking change has a migration example.
-3. Run `bun run release:minor` (or `:patch`) in an interactive terminal. The script checks the tree and npm auth, runs `verify`, bumps the version, and publishes. Publishing inherits the terminal so npm can prompt for browser or two-factor authentication. It never commits, tags, or pushes.
+3. Run `bun run release:minor` (or `:patch`) in an interactive terminal. The script checks the tree and npm auth, bumps the version, runs `verify` on the bumped version (the build embeds it), and publishes. Publishing inherits the terminal so npm can prompt for browser or two-factor authentication. It never commits, tags, or pushes.
    - If anything fails **before** publishing, it restores the version files and exits.
    - Once publishing succeeds, the bumped files stay: the version exists on npm. The script prints the Git commands that finish the release. When a publish outcome is unclear, check `npm view @mszr/selenita versions` before retrying.
 4. The maintainer finishes the release in Git: commit `🔖 release v<version>`, create an annotated tag with `git tag -a v<version> -m 'selenita v<version>'`, then `git push --follow-tags`. Annotated tags are required for `--follow-tags` to include them.
