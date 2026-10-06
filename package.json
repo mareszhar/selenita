@@ -1,7 +1,7 @@
 {
   "name": "@mszr/selenita",
   "type": "module",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "packageManager": "bun@1.4.2",
   "description": "Test what your users see in their editor — completions, hovers, diagnostics, signature help, and rename, with tagged-template fixtures.",
   "author": "Mares",
